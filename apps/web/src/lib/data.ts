@@ -42,6 +42,16 @@ const relationSelect: Record<string, string> = {
   form_templates: "*",
   form_submissions:
     "*,service_user:service_users(full_name,area_id),template:form_templates(name,category,version)",
+  employee_compliance: "*,employee:employees(full_name,job_title,area_id)",
+  training_courses: "*",
+  employee_training:
+    "*,employee:employees(full_name,job_title),course:training_courses(name,category,mandatory)",
+  service_types: "*",
+  service_user_staff_preferences:
+    "*,employee:employees(full_name),service_user:service_users(full_name)",
+  complaints: "*,service_user:service_users(full_name)",
+  data_rights_requests: "*,service_user:service_users(full_name)",
+  data_breaches: "*",
 };
 
 export function useRows(

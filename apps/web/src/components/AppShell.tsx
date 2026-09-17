@@ -31,6 +31,7 @@ export type PageKey =
   | "medication"
   | "incidents"
   | "workforce"
+  | "compliance"
   | "finance"
   | "reports"
   | "settings";
@@ -43,6 +44,7 @@ const items: [PageKey, string, React.ReactNode, string?][] = [
   ["medication", "Medication", <Pill />, "medication.view"],
   ["incidents", "Incidents & safeguarding", <ShieldAlert />, "incidents.view"],
   ["workforce", "Workforce", <BriefcaseBusiness />, "timesheets.view"],
+  ["compliance", "Compliance & services", <ClipboardList />, "employees.view"],
   ["finance", "Finance", <ReceiptPoundSterling />, "invoices.view"],
   ["reports", "Reports & audit", <FileBarChart />, "reports.view"],
   ["settings", "Settings", <Settings />, "settings.manage"],

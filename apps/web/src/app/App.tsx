@@ -15,6 +15,7 @@ import {
 } from "@/pages/BusinessOperationsPages";
 import { AcceptInvitationScreen } from "@/features/auth/components/AcceptInvitationScreen";
 import { ComplianceRecordsPage } from "@/pages/ComplianceRecordsPage";
+import { CompliancePage } from "@/pages/CompliancePage";
 
 /** Authenticated, capability-driven application shell. Hash navigation keeps
  * static hosting simple while company changes clear all tenant-cached data. */
@@ -31,6 +32,7 @@ export function App() {
       "medication",
       "incidents",
       "workforce",
+      "compliance",
       "finance",
       "reports",
       "settings",
@@ -75,6 +77,7 @@ export function App() {
     medication: <MedicationPage />,
     incidents: <IncidentsPage />,
     workforce: <ImprovedWorkforcePage />,
+    compliance: <CompliancePage />,
     finance: <ImprovedFinancePage />,
     reports: <ReportsPage />,
     settings: <SettingsPage />,
