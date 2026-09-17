@@ -46,9 +46,15 @@ All editing dialogs now use most of the available browser window. The care-plan 
 
 ## Supabase migration
 
-This release contains one new migration:
+This release contains the operational-areas migration and its compliance-record follow-up:
 
 `supabase/migrations/20260916200000_operational_areas_finance_workforce.sql`
+
+`supabase/migrations/20260916210000_compliance_records_and_area_save.sql`
+
+`supabase/migrations/20260917090000_fix_area_bootstrap_workflow.sql`
+
+The second migration fixes Area saving through a validated audited database operation and adds the expanded service-user profile, controlled forms and concerns register.
 
 From `/workspaces/careflow`, first confirm the correct linked project:
 
@@ -67,10 +73,12 @@ Preview the migration:
 npx supabase@latest db push --linked --dry-run
 ```
 
-The dry run should list only:
+The dry run should list any unapplied CareFlow migrations, including these two when neither has yet been deployed:
 
 ```text
 20260916200000_operational_areas_finance_workforce.sql
+20260916210000_compliance_records_and_area_save.sql
+20260917090000_fix_area_bootstrap_workflow.sql
 ```
 
 Then apply it:
@@ -100,13 +108,15 @@ Restart the development server and hard-refresh the browser.
 
 ## First configuration after deployment
 
-1. Open **Settings → Areas & offices**.
-2. Rename `Main area` or create the company's four real areas.
+1. Open **Settings → Areas & offices**. Every company already has a `Main area`; rename it or create additional areas. Area codes are generated and made unique automatically.
+2. Add employees. During initial setup an employee can remain unassigned to an area.
 3. Edit each employee and assign their operational area.
-4. Edit each service user and assign their area, funding type, payer and payer reference.
-5. Open **Finance → Debtors** to review balances.
-6. Open **Staff hours & payroll** to compare delivered care against timesheets.
-7. Open **Care plans & risks** and complete each person's structured care plan.
+4. Return to **Settings → Areas & offices** and appoint each area manager after the employees exist.
+5. Add or edit each service user and assign their area, funding type, payer and payer reference.
+6. Open **Finance → Debtors** to review balances.
+7. Open **Staff hours & payroll** to compare delivered care against timesheets.
+8. Open **Care plans & risks** and complete each person's structured care plan.
+9. Open **Forms & concerns**, configure the agency's controlled form templates and test the concern escalation workflow.
 
 ## Reporting rule
 

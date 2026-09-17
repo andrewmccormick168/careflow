@@ -1,84 +1,1703 @@
-import { useMemo, useState } from 'react';
-import { CalendarDays, FileHeart, FileText, Mail, MapPin, Phone, Pill, ShieldAlert, UserRound, UsersRound } from 'lucide-react';
-import { DataError, Empty, Field, Loading, Modal, PageHeader, SearchBox, Status } from '@/components/ui';
-import { type Row, useCreateRow, useRows, useUpdateRow } from '@/lib/data';
-import { useAuth } from '@/lib/authContext';
-import { supabase } from '@/lib/supabaseClient';
-import { CareScheduleBuilder } from '@/components/CareScheduleBuilder';
+import { useMemo, useState } from "react";
+import {
+  CalendarDays,
+  FileHeart,
+  FileText,
+  Mail,
+  MapPin,
+  Phone,
+  Pill,
+  ShieldAlert,
+  UserRound,
+  UsersRound,
+} from "lucide-react";
+import {
+  DataError,
+  Empty,
+  Field,
+  Loading,
+  Modal,
+  PageHeader,
+  SearchBox,
+  Status,
+} from "@/components/ui";
+import { type Row, useCreateRow, useRows, useUpdateRow } from "@/lib/data";
+import { useAuth } from "@/lib/authContext";
+import { supabase } from "@/lib/supabaseClient";
+import { CareScheduleBuilder } from "@/components/CareScheduleBuilder";
 
-const localDateTime=(offsetHours=1)=>{const date=new Date(Date.now()+offsetHours*60*60*1000);date.setMinutes(date.getMinutes()-date.getTimezoneOffset());return date.toISOString().slice(0,16)};
+const localDateTime = (offsetHours = 1) => {
+  const date = new Date(Date.now() + offsetHours * 60 * 60 * 1000);
+  date.setMinutes(date.getMinutes() - date.getTimezoneOffset());
+  return date.toISOString().slice(0, 16);
+};
 
-function VisitForm({person,onClose}:{person:Row;onClose:()=>void}){
-  const employees=useRows('employees','full_name',true); const create=useCreateRow('visits');
-  async function submit(e:React.FormEvent<HTMLFormElement>){e.preventDefault();const form=new FormData(e.currentTarget);await create.mutateAsync({...Object.fromEntries(form),service_user_id:person.id});onClose()}
-  return <form className="form-grid" onSubmit={submit}>
-    <Field label="Person"><input value={person.full_name} disabled/></Field>
-    <Field label="Assign employee"><select name="employee_id" defaultValue=""><option value="">Unallocated</option>{employees.data?.filter(x=>x.status==='active').map(x=><option key={x.id} value={x.id}>{x.full_name}</option>)}</select></Field>
-    <Field label="Visit type"><input name="visit_type" defaultValue="Care visit" required/></Field>
-    <Field label="Status"><select name="status" defaultValue="scheduled"><option value="scheduled">Scheduled</option><option value="cancelled">Cancelled</option></select></Field>
-    <Field label="Starts"><input name="starts_at" type="datetime-local" defaultValue={localDateTime(1)} required/></Field>
-    <Field label="Ends"><input name="ends_at" type="datetime-local" defaultValue={localDateTime(2)} required/></Field>
-    <Field label="Visit notes"><textarea name="notes" placeholder="Instructions for the care team"/></Field>
-    {create.error&&<p className="form-error">{create.error.message}</p>}
-    <div className="form-actions"><button type="button" className="btn" onClick={onClose}>Cancel</button><button className="btn primary" disabled={create.isPending}>{create.isPending?'Scheduling…':'Schedule visit'}</button></div>
-  </form>
+function VisitForm({ person, onClose }: { person: Row; onClose: () => void }) {
+  const employees = useRows("employees", "full_name", true);
+  const create = useCreateRow("visits");
+  async function submit(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    const form = new FormData(e.currentTarget);
+    await create.mutateAsync({
+      ...Object.fromEntries(form),
+      service_user_id: person.id,
+    });
+    onClose();
+  }
+  return (
+    <form className="form-grid" onSubmit={submit}>
+      <Field label="Person">
+        <input value={person.full_name} disabled />
+      </Field>
+      <Field label="Assign employee">
+        <select name="employee_id" defaultValue="">
+          <option value="">Unallocated</option>
+          {employees.data
+            ?.filter((x) => x.status === "active")
+            .map((x) => (
+              <option key={x.id} value={x.id}>
+                {x.full_name}
+              </option>
+            ))}
+        </select>
+      </Field>
+      <Field label="Visit type">
+        <input name="visit_type" defaultValue="Care visit" required />
+      </Field>
+      <Field label="Status">
+        <select name="status" defaultValue="scheduled">
+          <option value="scheduled">Scheduled</option>
+          <option value="cancelled">Cancelled</option>
+        </select>
+      </Field>
+      <Field label="Starts">
+        <input
+          name="starts_at"
+          type="datetime-local"
+          defaultValue={localDateTime(1)}
+          required
+        />
+      </Field>
+      <Field label="Ends">
+        <input
+          name="ends_at"
+          type="datetime-local"
+          defaultValue={localDateTime(2)}
+          required
+        />
+      </Field>
+      <Field label="Visit notes">
+        <textarea name="notes" placeholder="Instructions for the care team" />
+      </Field>
+      {create.error && <p className="form-error">{create.error.message}</p>}
+      <div className="form-actions">
+        <button type="button" className="btn" onClick={onClose}>
+          Cancel
+        </button>
+        <button className="btn primary" disabled={create.isPending}>
+          {create.isPending ? "Scheduling…" : "Schedule visit"}
+        </button>
+      </div>
+    </form>
+  );
 }
 
-function PersonRecord({person,areas,onClose}:{person:Row;areas:Row[];onClose:()=>void}){
-  const {activeCompany,demo}=useAuth();const [schedule,setSchedule]=useState(false); const [editing,setEditing]=useState(false);const [addingContact,setAddingContact]=useState(false);const [addingAssignment,setAddingAssignment]=useState(false);const [addingDocument,setAddingDocument]=useState(false);const [addingCharge,setAddingCharge]=useState(false);const [uploading,setUploading]=useState(false);const [documentError,setDocumentError]=useState('');
-  const plans=useRows('care_plans','created_at',false); const risks=useRows('risk_assessments','created_at',false); const meds=useRows('medications','created_at',false); const visits=useRows('visits','starts_at',false); const incidents=useRows('incidents','occurred_at',false);
-  const contacts=useRows('service_user_contacts','created_at',false);const assignments=useRows('service_user_assignments','created_at',false);const documents=useRows('documents','created_at',false);const chargeRates=useRows('charge_rates','effective_from',false);const employees=useRows('employees','full_name',true);const createContact=useCreateRow('service_user_contacts');const createAssignment=useCreateRow('service_user_assignments');const createDocument=useCreateRow('documents');const createCharge=useCreateRow('charge_rates');const updateAssignment=useUpdateRow('service_user_assignments');const update=useUpdateRow('service_users');
-  const own=(rows:Row[]|undefined)=>rows?.filter(x=>x.service_user_id===person.id)??[];
-  async function save(e:React.FormEvent<HTMLFormElement>){e.preventDefault();await update.mutateAsync({id:person.id,...Object.fromEntries(new FormData(e.currentTarget))});setEditing(false)}
-  async function saveContact(e:React.FormEvent<HTMLFormElement>){e.preventDefault();await createContact.mutateAsync({...Object.fromEntries(new FormData(e.currentTarget)),service_user_id:person.id});setAddingContact(false)}
-  async function saveAssignment(e:React.FormEvent<HTMLFormElement>){e.preventDefault();await createAssignment.mutateAsync({...Object.fromEntries(new FormData(e.currentTarget)),service_user_id:person.id,status:'active'});setAddingAssignment(false)}
-  async function saveCharge(e:React.FormEvent<HTMLFormElement>){e.preventDefault();await createCharge.mutateAsync({...Object.fromEntries(new FormData(e.currentTarget)),service_user_id:person.id});setAddingCharge(false)}
-  async function uploadDocument(e:React.FormEvent<HTMLFormElement>){e.preventDefault();setDocumentError('');const form=new FormData(e.currentTarget);const file=form.get('file');if(!(file instanceof File)||!activeCompany)return;setUploading(true);try{const safe=file.name.replace(/[^a-zA-Z0-9._-]/g,'_');const path=`${activeCompany.id}/service-users/${person.id}/${crypto.randomUUID()}-${safe}`;if(!demo){const {error}=await supabase.storage.from('careflow-private').upload(path,file,{contentType:file.type,upsert:false});if(error)throw error}await createDocument.mutateAsync({service_user_id:person.id,category:String(form.get('category')||'Other'),name:file.name,storage_path:path,mime_type:file.type||null,size_bytes:file.size});setAddingDocument(false)}catch(error){setDocumentError(error instanceof Error?error.message:'Document upload failed')}finally{setUploading(false)}}
-  async function openDocument(document:Row){if(demo)return;const {data,error}=await supabase.storage.from('careflow-private').createSignedUrl(document.storage_path,60);if(error){setDocumentError(error.message);return}window.open(data.signedUrl,'_blank','noopener,noreferrer')}
-  if(schedule)return <Modal title={`Schedule visit · ${person.full_name}`} onClose={()=>setSchedule(false)}><VisitForm person={person} onClose={()=>setSchedule(false)}/></Modal>;
-  return <Modal title={`Care record · ${person.full_name}`} onClose={onClose} className="care-record-modal">
-    <div className="record-detail">
-      <header className="record-summary"><span className="large-avatar">{person.full_name.split(' ').map((x:string)=>x[0]).join('').slice(0,2)}</span><div><h3>{person.full_name}</h3><p>Known as {person.preferred_name||person.full_name.split(' ')[0]}</p></div><Status value={person.status}/></header>
-      {person.important_alerts&&<div className="alert-strip">{person.important_alerts}</div>}
-      {editing?<form className="form-grid compact-form" onSubmit={save}><Field label="Full name"><input name="full_name" defaultValue={person.full_name} required/></Field><Field label="Preferred name"><input name="preferred_name" defaultValue={person.preferred_name??''}/></Field><Field label="Operational area"><select name="area_id" defaultValue={person.area_id??''} required><option value="" disabled>Select area</option>{areas.filter(a=>a.status==='active').map(a=><option key={a.id} value={a.id}>{a.name}</option>)}</select></Field><Field label="Telephone"><input name="contact_phone" defaultValue={person.contact_phone??''}/></Field><Field label="Status"><select name="status" defaultValue={person.status}><option value="active">Active</option><option value="ended">Ended</option><option value="archived">Archived</option></select></Field><Field label="Funding"><select name="funding_type" defaultValue={person.funding_type??'private'}><option value="private">Private</option><option value="local_authority">Local authority</option><option value="nhs">NHS</option><option value="mixed">Mixed</option><option value="other">Other</option></select></Field><Field label="Payer name"><input name="payer_name" defaultValue={person.payer_name??''}/></Field><Field label="Payer reference"><input name="payer_reference" defaultValue={person.payer_reference??''}/></Field><Field label="Payment terms (days)"><input name="payment_terms_days" type="number" min="0" max="180" defaultValue={person.payment_terms_days??30}/></Field><Field label="Address"><textarea name="address" defaultValue={person.address??''}/></Field><Field label="Communication requirements"><textarea name="communication_requirements" defaultValue={person.communication_requirements??''}/></Field><Field label="Accessibility requirements"><textarea name="accessibility_requirements" defaultValue={person.accessibility_requirements??''}/></Field><Field label="Important alerts"><textarea name="important_alerts" defaultValue={person.important_alerts??''}/></Field>{update.error&&<p className="form-error">{update.error.message}</p>}<div className="form-actions"><button type="button" className="btn" onClick={()=>setEditing(false)}>Cancel</button><button className="btn primary" disabled={update.isPending}>Save changes</button></div></form>:<div className="detail-grid"><div><small>Operational area</small><strong><MapPin/>{person.area?.name||'Not assigned'}</strong></div><div><small>Telephone</small><strong><Phone/>{person.contact_phone||'Not recorded'}</strong></div><div><small>Address</small><strong><MapPin/>{person.address||'Not recorded'}</strong></div><div><small>Funding / payer</small><strong>{String(person.funding_type||'private').replaceAll('_',' ')} · {person.payer_name||person.full_name}</strong></div><div><small>Communication</small><strong>{person.communication_requirements||'No requirements recorded'}</strong></div><div><small>Accessibility</small><strong>{person.accessibility_requirements||'No requirements recorded'}</strong></div></div>}
-      {!editing&&<div className="record-actions"><button className="btn primary" onClick={()=>setSchedule(true)}><CalendarDays/>Schedule visit</button><button className="btn" onClick={()=>setEditing(true)}>Edit person</button></div>}
-      <div className="record-counts"><article><CalendarDays/><strong>{own(visits.data).length}</strong><span>Visits</span></article><article><FileHeart/><strong>{own(plans.data).length}</strong><span>Care plans</span></article><article><ShieldAlert/><strong>{own(risks.data).length}</strong><span>Risks</span></article><article><Pill/><strong>{own(meds.data).length}</strong><span>Medications</span></article></div>
-      <CareScheduleBuilder person={person}/>
-      <section className="record-section"><h3>Recent visits</h3>{own(visits.data).length?<div className="compact-list">{own(visits.data).slice(0,5).map(v=><article key={v.id}><CalendarDays/><div><strong>{v.visit_type}</strong><small>{new Date(v.starts_at).toLocaleString('en-GB')} · {v.employee?.full_name||'Unallocated'}</small></div><Status value={v.status}/></article>)}</div>:<Empty text="No visits scheduled"/>}</section>
-      <section className="record-section"><h3>Care and safety</h3>{[...own(plans.data),...own(risks.data),...own(incidents.data)].length?<div className="compact-list">{own(plans.data).map(x=><article key={x.id}><FileHeart/><div><strong>{x.title}</strong><small>{x.summary||'No summary'}</small></div><Status value={x.status}/></article>)}{own(risks.data).map(x=><article key={x.id}><ShieldAlert/><div><strong>{x.category}: {x.hazard}</strong><small>{x.controls||'No controls recorded'}</small></div><Status value={x.status}/></article>)}{own(incidents.data).map(x=><article key={x.id}><ShieldAlert/><div><strong>{x.incident_type}</strong><small>{x.description}</small></div><Status value={x.status}/></article>)}</div>:<Empty text="No care plans, risks or incidents recorded"/>}</section>
-      <section className="record-section"><div className="section-title"><h3>Contacts</h3><button className="btn small" onClick={()=>setAddingContact(true)}>Add contact</button></div>{addingContact&&<form className="form-grid inline-form" onSubmit={saveContact}><Field label="Contact type"><input name="contact_type" placeholder="Family, GP, social worker…" required/></Field><Field label="Name"><input name="name" required/></Field><Field label="Telephone"><input name="phone"/></Field><Field label="Email"><input name="email" type="email"/></Field><Field label="Notes"><textarea name="notes"/></Field>{createContact.error&&<p className="form-error">{createContact.error.message}</p>}<div className="form-actions"><button type="button" className="btn" onClick={()=>setAddingContact(false)}>Cancel</button><button className="btn primary">Save contact</button></div></form>}{own(contacts.data).length?<div className="compact-list">{own(contacts.data).map(x=><article key={x.id}><Phone/><div><strong>{x.name||x.contact_type}</strong><small>{x.contact_type} · {x.phone||x.email||'No contact details'}</small></div></article>)}</div>:!addingContact&&<Empty text="No contacts recorded"/>}</section>
-      <section className="record-section"><div className="section-title"><h3>Assigned care team</h3><button className="btn small" onClick={()=>setAddingAssignment(true)}>Assign employee</button></div>{addingAssignment&&<form className="form-grid inline-form" onSubmit={saveAssignment}><Field label="Employee"><select name="employee_id" required defaultValue=""><option value="" disabled>Select employee</option>{employees.data?.filter(x=>x.status==='active').map(x=><option key={x.id} value={x.id}>{x.full_name}</option>)}</select></Field><Field label="Assignment type"><input name="assignment_type" defaultValue="carer" required/></Field><Field label="Start date"><input name="start_date" type="date" defaultValue={new Date().toISOString().slice(0,10)} required/></Field><Field label="End date"><input name="end_date" type="date"/></Field>{createAssignment.error&&<p className="form-error">{createAssignment.error.message}</p>}<div className="form-actions"><button type="button" className="btn" onClick={()=>setAddingAssignment(false)}>Cancel</button><button className="btn primary">Save assignment</button></div></form>}{own(assignments.data).length?<div className="compact-list">{own(assignments.data).map(x=><article key={x.id}><UsersRound/><div><strong>{x.employee?.full_name}</strong><small>{x.assignment_type} · from {new Date(x.start_date).toLocaleDateString('en-GB')}</small></div><Status value={x.status}/>{x.status==='active'&&<button className="btn small" onClick={()=>void updateAssignment.mutate({id:x.id,status:'ended',end_date:new Date().toISOString().slice(0,10)})}>End</button>}</article>)}</div>:!addingAssignment&&<Empty text="No employees assigned"/>}</section>
-      <section className="record-section"><div className="section-title"><h3>Documents</h3><button className="btn small" onClick={()=>setAddingDocument(true)}>Upload document</button></div>{addingDocument&&<form className="form-grid inline-form" onSubmit={uploadDocument}><Field label="Category"><select name="category" defaultValue="Care record"><option>Care record</option><option>Consent</option><option>Assessment</option><option>Correspondence</option><option>Other</option></select></Field><Field label="File"><input name="file" type="file" accept=".pdf,image/jpeg,image/png,.csv" required/></Field>{documentError&&<p className="form-error">{documentError}</p>}<div className="form-actions"><button type="button" className="btn" onClick={()=>setAddingDocument(false)}>Cancel</button><button className="btn primary" disabled={uploading}>{uploading?'Uploading…':'Upload'}</button></div></form>}{own(documents.data).length?<div className="compact-list">{own(documents.data).map(x=><article key={x.id}><FileText/><div><strong>{x.name}</strong><small>{x.category} · {x.size_bytes?`${Math.ceil(Number(x.size_bytes)/1024)} KB`:''}</small></div><button className="btn small" onClick={()=>void openDocument(x)}>Open</button></article>)}</div>:!addingDocument&&<Empty text="No documents uploaded"/>}{documentError&&!addingDocument&&<p className="form-error">{documentError}</p>}</section>
-      <section className="record-section"><div className="section-title"><h3>Charge rates</h3><button className="btn small" onClick={()=>setAddingCharge(true)}>Add rate</button></div>{addingCharge&&<form className="form-grid inline-form" onSubmit={saveCharge}><Field label="Rate name"><input name="name" defaultValue="Standard care" required/></Field><Field label="Hourly rate"><input name="hourly_rate" type="number" min="0" step="0.01" required/></Field><Field label="Effective from"><input name="effective_from" type="date" defaultValue={new Date().toISOString().slice(0,10)} required/></Field><Field label="Effective to"><input name="effective_to" type="date"/></Field>{createCharge.error&&<p className="form-error">{createCharge.error.message}</p>}<div className="form-actions"><button type="button" className="btn" onClick={()=>setAddingCharge(false)}>Cancel</button><button className="btn primary">Save rate</button></div></form>}{own(chargeRates.data).length?<div className="compact-list">{own(chargeRates.data).map(x=><article key={x.id}><FileText/><div><strong>{x.name}</strong><small>£{Number(x.hourly_rate).toFixed(2)} per hour · from {new Date(x.effective_from).toLocaleDateString('en-GB')}</small></div></article>)}</div>:!addingCharge&&<Empty text="No charge rates recorded"/>}</section>
-    </div>
-  </Modal>
+function PersonRecord({
+  person,
+  areas,
+  onClose,
+}: {
+  person: Row;
+  areas: Row[];
+  onClose: () => void;
+}) {
+  const { activeCompany, demo } = useAuth();
+  const [schedule, setSchedule] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [addingContact, setAddingContact] = useState(false);
+  const [addingAssignment, setAddingAssignment] = useState(false);
+  const [addingDocument, setAddingDocument] = useState(false);
+  const [addingCharge, setAddingCharge] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [documentError, setDocumentError] = useState("");
+  const plans = useRows("care_plans", "created_at", false);
+  const risks = useRows("risk_assessments", "created_at", false);
+  const meds = useRows("medications", "created_at", false);
+  const visits = useRows("visits", "starts_at", false);
+  const incidents = useRows("incidents", "occurred_at", false);
+  const contacts = useRows("service_user_contacts", "created_at", false);
+  const assignments = useRows("service_user_assignments", "created_at", false);
+  const documents = useRows("documents", "created_at", false);
+  const chargeRates = useRows("charge_rates", "effective_from", false);
+  const employees = useRows("employees", "full_name", true);
+  const createContact = useCreateRow("service_user_contacts");
+  const createAssignment = useCreateRow("service_user_assignments");
+  const createDocument = useCreateRow("documents");
+  const createCharge = useCreateRow("charge_rates");
+  const updateAssignment = useUpdateRow("service_user_assignments");
+  const update = useUpdateRow("service_users");
+  const own = (rows: Row[] | undefined) =>
+    rows?.filter((x) => x.service_user_id === person.id) ?? [];
+  async function save(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    await update.mutateAsync({
+      id: person.id,
+      ...Object.fromEntries(new FormData(e.currentTarget)),
+    });
+    setEditing(false);
+  }
+  async function saveContact(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    await createContact.mutateAsync({
+      ...Object.fromEntries(new FormData(e.currentTarget)),
+      service_user_id: person.id,
+    });
+    setAddingContact(false);
+  }
+  async function saveAssignment(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    await createAssignment.mutateAsync({
+      ...Object.fromEntries(new FormData(e.currentTarget)),
+      service_user_id: person.id,
+      status: "active",
+    });
+    setAddingAssignment(false);
+  }
+  async function saveCharge(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    await createCharge.mutateAsync({
+      ...Object.fromEntries(new FormData(e.currentTarget)),
+      service_user_id: person.id,
+    });
+    setAddingCharge(false);
+  }
+  async function uploadDocument(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    setDocumentError("");
+    const form = new FormData(e.currentTarget);
+    const file = form.get("file");
+    if (!(file instanceof File) || !activeCompany) return;
+    setUploading(true);
+    try {
+      const safe = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
+      const path = `${activeCompany.id}/service-users/${person.id}/${crypto.randomUUID()}-${safe}`;
+      if (!demo) {
+        const { error } = await supabase.storage
+          .from("careflow-private")
+          .upload(path, file, { contentType: file.type, upsert: false });
+        if (error) throw error;
+      }
+      await createDocument.mutateAsync({
+        service_user_id: person.id,
+        category: String(form.get("category") || "Other"),
+        name: file.name,
+        storage_path: path,
+        mime_type: file.type || null,
+        size_bytes: file.size,
+      });
+      setAddingDocument(false);
+    } catch (error) {
+      setDocumentError(
+        error instanceof Error ? error.message : "Document upload failed",
+      );
+    } finally {
+      setUploading(false);
+    }
+  }
+  async function openDocument(document: Row) {
+    if (demo) return;
+    const { data, error } = await supabase.storage
+      .from("careflow-private")
+      .createSignedUrl(document.storage_path, 60);
+    if (error) {
+      setDocumentError(error.message);
+      return;
+    }
+    window.open(data.signedUrl, "_blank", "noopener,noreferrer");
+  }
+  if (schedule)
+    return (
+      <Modal
+        title={`Schedule visit · ${person.full_name}`}
+        onClose={() => setSchedule(false)}
+      >
+        <VisitForm person={person} onClose={() => setSchedule(false)} />
+      </Modal>
+    );
+  return (
+    <Modal
+      title={`Care record · ${person.full_name}`}
+      onClose={onClose}
+      className="care-record-modal"
+    >
+      <div className="record-detail">
+        <header className="record-summary">
+          <span className="large-avatar">
+            {person.full_name
+              .split(" ")
+              .map((x: string) => x[0])
+              .join("")
+              .slice(0, 2)}
+          </span>
+          <div>
+            <h3>{person.full_name}</h3>
+            <p>
+              Known as {person.preferred_name || person.full_name.split(" ")[0]}
+            </p>
+          </div>
+          <Status value={person.status} />
+        </header>
+        {person.important_alerts && (
+          <div className="alert-strip">{person.important_alerts}</div>
+        )}
+        {editing ? (
+          <form className="form-grid compact-form" onSubmit={save}>
+            <Field label="Full name">
+              <input
+                name="full_name"
+                defaultValue={person.full_name}
+                required
+              />
+            </Field>
+            <Field label="Preferred name">
+              <input
+                name="preferred_name"
+                defaultValue={person.preferred_name ?? ""}
+              />
+            </Field>
+            <Field label="Operational area">
+              <select
+                name="area_id"
+                defaultValue={person.area_id ?? ""}
+                required
+              >
+                <option value="" disabled>
+                  Select area
+                </option>
+                {areas
+                  .filter((a) => a.status === "active")
+                  .map((a) => (
+                    <option key={a.id} value={a.id}>
+                      {a.name}
+                    </option>
+                  ))}
+              </select>
+            </Field>
+            <Field label="Telephone">
+              <input
+                name="contact_phone"
+                defaultValue={person.contact_phone ?? ""}
+              />
+            </Field>
+            <Field label="Date of birth">
+              <input
+                name="date_of_birth"
+                type="date"
+                defaultValue={person.date_of_birth ?? ""}
+              />
+            </Field>
+            <Field label="NHS / CHI number">
+              <input
+                name="nhs_chi_number"
+                defaultValue={person.nhs_chi_number ?? ""}
+              />
+            </Field>
+            <Field label="Postcode">
+              <input name="postcode" defaultValue={person.postcode ?? ""} />
+            </Field>
+            <Field label="Primary language">
+              <input
+                name="primary_language"
+                defaultValue={person.primary_language ?? ""}
+              />
+            </Field>
+            <Field label="Faith / cultural requirements">
+              <input
+                name="religion_faith"
+                defaultValue={person.religion_faith ?? ""}
+              />
+            </Field>
+            <Field label="GP name">
+              <input name="gp_name" defaultValue={person.gp_name ?? ""} />
+            </Field>
+            <Field label="GP practice">
+              <input
+                name="gp_practice"
+                defaultValue={person.gp_practice ?? ""}
+              />
+            </Field>
+            <Field label="GP telephone">
+              <input name="gp_phone" defaultValue={person.gp_phone ?? ""} />
+            </Field>
+            <Field label="Status">
+              <select name="status" defaultValue={person.status}>
+                <option value="active">Active</option>
+                <option value="ended">Ended</option>
+                <option value="archived">Archived</option>
+              </select>
+            </Field>
+            <Field label="Funding">
+              <select
+                name="funding_type"
+                defaultValue={person.funding_type ?? "private"}
+              >
+                <option value="private">Private</option>
+                <option value="local_authority">Local authority</option>
+                <option value="nhs">NHS</option>
+                <option value="mixed">Mixed</option>
+                <option value="other">Other</option>
+              </select>
+            </Field>
+            <Field label="Payer name">
+              <input name="payer_name" defaultValue={person.payer_name ?? ""} />
+            </Field>
+            <Field label="Payer reference">
+              <input
+                name="payer_reference"
+                defaultValue={person.payer_reference ?? ""}
+              />
+            </Field>
+            <Field label="Payment terms (days)">
+              <input
+                name="payment_terms_days"
+                type="number"
+                min="0"
+                max="180"
+                defaultValue={person.payment_terms_days ?? 30}
+              />
+            </Field>
+            <Field label="Address">
+              <textarea name="address" defaultValue={person.address ?? ""} />
+            </Field>
+            <Field label="Communication requirements">
+              <textarea
+                name="communication_requirements"
+                defaultValue={person.communication_requirements ?? ""}
+              />
+            </Field>
+            <Field label="Accessibility requirements">
+              <textarea
+                name="accessibility_requirements"
+                defaultValue={person.accessibility_requirements ?? ""}
+              />
+            </Field>
+            <Field label="Diagnoses / health conditions">
+              <textarea
+                name="diagnoses"
+                defaultValue={person.diagnoses ?? ""}
+              />
+            </Field>
+            <Field label="Allergies">
+              <textarea
+                name="allergies"
+                defaultValue={person.allergies ?? ""}
+              />
+            </Field>
+            <Field label="Dietary requirements">
+              <textarea
+                name="dietary_requirements"
+                defaultValue={person.dietary_requirements ?? ""}
+              />
+            </Field>
+            <Field label="Mobility and transfers">
+              <textarea
+                name="mobility_requirements"
+                defaultValue={person.mobility_requirements ?? ""}
+              />
+            </Field>
+            <Field label="Visit constraints">
+              <textarea
+                name="visit_constraints"
+                defaultValue={person.visit_constraints ?? ""}
+                placeholder="Visit windows, preferred or excluded staff, access requirements…"
+              />
+            </Field>
+            <Field label="Authorised weekly care (minutes)">
+              <input
+                name="authorised_weekly_minutes"
+                type="number"
+                min="0"
+                defaultValue={person.authorised_weekly_minutes ?? ""}
+              />
+            </Field>
+            <Field label="Capacity status">
+              <select
+                name="capacity_status"
+                defaultValue={person.capacity_status ?? "not_assessed"}
+              >
+                <option value="not_assessed">Not assessed</option>
+                <option value="has_capacity">Has capacity</option>
+                <option value="lacks_capacity">Lacks capacity</option>
+                <option value="fluctuating">Fluctuating</option>
+              </select>
+            </Field>
+            <Field label="Capacity / best-interest details">
+              <textarea
+                name="capacity_details"
+                defaultValue={person.capacity_details ?? ""}
+              />
+            </Field>
+            <Field label="Important alerts">
+              <textarea
+                name="important_alerts"
+                defaultValue={person.important_alerts ?? ""}
+              />
+            </Field>
+            {update.error && (
+              <p className="form-error">{update.error.message}</p>
+            )}
+            <div className="form-actions">
+              <button
+                type="button"
+                className="btn"
+                onClick={() => setEditing(false)}
+              >
+                Cancel
+              </button>
+              <button className="btn primary" disabled={update.isPending}>
+                Save changes
+              </button>
+            </div>
+          </form>
+        ) : (
+          <div className="detail-grid">
+            <div>
+              <small>Operational area</small>
+              <strong>
+                <MapPin />
+                {person.area?.name || "Not assigned"}
+              </strong>
+            </div>
+            <div>
+              <small>Telephone</small>
+              <strong>
+                <Phone />
+                {person.contact_phone || "Not recorded"}
+              </strong>
+            </div>
+            <div>
+              <small>Address</small>
+              <strong>
+                <MapPin />
+                {person.address || "Not recorded"}
+              </strong>
+            </div>
+            <div>
+              <small>Funding / payer</small>
+              <strong>
+                {String(person.funding_type || "private").replaceAll("_", " ")}{" "}
+                · {person.payer_name || person.full_name}
+              </strong>
+            </div>
+            <div>
+              <small>Communication</small>
+              <strong>
+                {person.communication_requirements ||
+                  "No requirements recorded"}
+              </strong>
+            </div>
+            <div>
+              <small>Accessibility</small>
+              <strong>
+                {person.accessibility_requirements ||
+                  "No requirements recorded"}
+              </strong>
+            </div>
+          </div>
+        )}
+        {!editing && (
+          <div className="record-actions">
+            <button className="btn primary" onClick={() => setSchedule(true)}>
+              <CalendarDays />
+              Schedule visit
+            </button>
+            <button className="btn" onClick={() => setEditing(true)}>
+              Edit person
+            </button>
+          </div>
+        )}
+        <div className="record-counts">
+          <article>
+            <CalendarDays />
+            <strong>{own(visits.data).length}</strong>
+            <span>Visits</span>
+          </article>
+          <article>
+            <FileHeart />
+            <strong>{own(plans.data).length}</strong>
+            <span>Care plans</span>
+          </article>
+          <article>
+            <ShieldAlert />
+            <strong>{own(risks.data).length}</strong>
+            <span>Risks</span>
+          </article>
+          <article>
+            <Pill />
+            <strong>{own(meds.data).length}</strong>
+            <span>Medications</span>
+          </article>
+        </div>
+        <CareScheduleBuilder person={person} />
+        <section className="record-section">
+          <h3>Recent visits</h3>
+          {own(visits.data).length ? (
+            <div className="compact-list">
+              {own(visits.data)
+                .slice(0, 5)
+                .map((v) => (
+                  <article key={v.id}>
+                    <CalendarDays />
+                    <div>
+                      <strong>{v.visit_type}</strong>
+                      <small>
+                        {new Date(v.starts_at).toLocaleString("en-GB")} ·{" "}
+                        {v.employee?.full_name || "Unallocated"}
+                      </small>
+                    </div>
+                    <Status value={v.status} />
+                  </article>
+                ))}
+            </div>
+          ) : (
+            <Empty text="No visits scheduled" />
+          )}
+        </section>
+        <section className="record-section">
+          <h3>Care and safety</h3>
+          {[...own(plans.data), ...own(risks.data), ...own(incidents.data)]
+            .length ? (
+            <div className="compact-list">
+              {own(plans.data).map((x) => (
+                <article key={x.id}>
+                  <FileHeart />
+                  <div>
+                    <strong>{x.title}</strong>
+                    <small>{x.summary || "No summary"}</small>
+                  </div>
+                  <Status value={x.status} />
+                </article>
+              ))}
+              {own(risks.data).map((x) => (
+                <article key={x.id}>
+                  <ShieldAlert />
+                  <div>
+                    <strong>
+                      {x.category}: {x.hazard}
+                    </strong>
+                    <small>{x.controls || "No controls recorded"}</small>
+                  </div>
+                  <Status value={x.status} />
+                </article>
+              ))}
+              {own(incidents.data).map((x) => (
+                <article key={x.id}>
+                  <ShieldAlert />
+                  <div>
+                    <strong>{x.incident_type}</strong>
+                    <small>{x.description}</small>
+                  </div>
+                  <Status value={x.status} />
+                </article>
+              ))}
+            </div>
+          ) : (
+            <Empty text="No care plans, risks or incidents recorded" />
+          )}
+        </section>
+        <section className="record-section">
+          <div className="section-title">
+            <h3>Contacts</h3>
+            <button
+              className="btn small"
+              onClick={() => setAddingContact(true)}
+            >
+              Add contact
+            </button>
+          </div>
+          {addingContact && (
+            <form className="form-grid inline-form" onSubmit={saveContact}>
+              <Field label="Contact type">
+                <input
+                  name="contact_type"
+                  placeholder="Family, GP, social worker…"
+                  required
+                />
+              </Field>
+              <Field label="Name">
+                <input name="name" required />
+              </Field>
+              <Field label="Telephone">
+                <input name="phone" />
+              </Field>
+              <Field label="Email">
+                <input name="email" type="email" />
+              </Field>
+              <Field label="Notes">
+                <textarea name="notes" />
+              </Field>
+              {createContact.error && (
+                <p className="form-error">{createContact.error.message}</p>
+              )}
+              <div className="form-actions">
+                <button
+                  type="button"
+                  className="btn"
+                  onClick={() => setAddingContact(false)}
+                >
+                  Cancel
+                </button>
+                <button className="btn primary">Save contact</button>
+              </div>
+            </form>
+          )}
+          {own(contacts.data).length ? (
+            <div className="compact-list">
+              {own(contacts.data).map((x) => (
+                <article key={x.id}>
+                  <Phone />
+                  <div>
+                    <strong>{x.name || x.contact_type}</strong>
+                    <small>
+                      {x.contact_type} ·{" "}
+                      {x.phone || x.email || "No contact details"}
+                    </small>
+                  </div>
+                </article>
+              ))}
+            </div>
+          ) : (
+            !addingContact && <Empty text="No contacts recorded" />
+          )}
+        </section>
+        <section className="record-section">
+          <div className="section-title">
+            <h3>Assigned care team</h3>
+            <button
+              className="btn small"
+              onClick={() => setAddingAssignment(true)}
+            >
+              Assign employee
+            </button>
+          </div>
+          {addingAssignment && (
+            <form className="form-grid inline-form" onSubmit={saveAssignment}>
+              <Field label="Employee">
+                <select name="employee_id" required defaultValue="">
+                  <option value="" disabled>
+                    Select employee
+                  </option>
+                  {employees.data
+                    ?.filter((x) => x.status === "active")
+                    .map((x) => (
+                      <option key={x.id} value={x.id}>
+                        {x.full_name}
+                      </option>
+                    ))}
+                </select>
+              </Field>
+              <Field label="Assignment type">
+                <input name="assignment_type" defaultValue="carer" required />
+              </Field>
+              <Field label="Start date">
+                <input
+                  name="start_date"
+                  type="date"
+                  defaultValue={new Date().toISOString().slice(0, 10)}
+                  required
+                />
+              </Field>
+              <Field label="End date">
+                <input name="end_date" type="date" />
+              </Field>
+              {createAssignment.error && (
+                <p className="form-error">{createAssignment.error.message}</p>
+              )}
+              <div className="form-actions">
+                <button
+                  type="button"
+                  className="btn"
+                  onClick={() => setAddingAssignment(false)}
+                >
+                  Cancel
+                </button>
+                <button className="btn primary">Save assignment</button>
+              </div>
+            </form>
+          )}
+          {own(assignments.data).length ? (
+            <div className="compact-list">
+              {own(assignments.data).map((x) => (
+                <article key={x.id}>
+                  <UsersRound />
+                  <div>
+                    <strong>{x.employee?.full_name}</strong>
+                    <small>
+                      {x.assignment_type} · from{" "}
+                      {new Date(x.start_date).toLocaleDateString("en-GB")}
+                    </small>
+                  </div>
+                  <Status value={x.status} />
+                  {x.status === "active" && (
+                    <button
+                      className="btn small"
+                      onClick={() =>
+                        void updateAssignment.mutate({
+                          id: x.id,
+                          status: "ended",
+                          end_date: new Date().toISOString().slice(0, 10),
+                        })
+                      }
+                    >
+                      End
+                    </button>
+                  )}
+                </article>
+              ))}
+            </div>
+          ) : (
+            !addingAssignment && <Empty text="No employees assigned" />
+          )}
+        </section>
+        <section className="record-section">
+          <div className="section-title">
+            <h3>Documents</h3>
+            <button
+              className="btn small"
+              onClick={() => setAddingDocument(true)}
+            >
+              Upload document
+            </button>
+          </div>
+          {addingDocument && (
+            <form className="form-grid inline-form" onSubmit={uploadDocument}>
+              <Field label="Category">
+                <select name="category" defaultValue="Care record">
+                  <option>Care record</option>
+                  <option>Consent</option>
+                  <option>Assessment</option>
+                  <option>Correspondence</option>
+                  <option>Other</option>
+                </select>
+              </Field>
+              <Field label="File">
+                <input
+                  name="file"
+                  type="file"
+                  accept=".pdf,image/jpeg,image/png,.csv"
+                  required
+                />
+              </Field>
+              {documentError && <p className="form-error">{documentError}</p>}
+              <div className="form-actions">
+                <button
+                  type="button"
+                  className="btn"
+                  onClick={() => setAddingDocument(false)}
+                >
+                  Cancel
+                </button>
+                <button className="btn primary" disabled={uploading}>
+                  {uploading ? "Uploading…" : "Upload"}
+                </button>
+              </div>
+            </form>
+          )}
+          {own(documents.data).length ? (
+            <div className="compact-list">
+              {own(documents.data).map((x) => (
+                <article key={x.id}>
+                  <FileText />
+                  <div>
+                    <strong>{x.name}</strong>
+                    <small>
+                      {x.category} ·{" "}
+                      {x.size_bytes
+                        ? `${Math.ceil(Number(x.size_bytes) / 1024)} KB`
+                        : ""}
+                    </small>
+                  </div>
+                  <button
+                    className="btn small"
+                    onClick={() => void openDocument(x)}
+                  >
+                    Open
+                  </button>
+                </article>
+              ))}
+            </div>
+          ) : (
+            !addingDocument && <Empty text="No documents uploaded" />
+          )}
+          {documentError && !addingDocument && (
+            <p className="form-error">{documentError}</p>
+          )}
+        </section>
+        <section className="record-section">
+          <div className="section-title">
+            <h3>Charge rates</h3>
+            <button className="btn small" onClick={() => setAddingCharge(true)}>
+              Add rate
+            </button>
+          </div>
+          {addingCharge && (
+            <form className="form-grid inline-form" onSubmit={saveCharge}>
+              <Field label="Rate name">
+                <input name="name" defaultValue="Standard care" required />
+              </Field>
+              <Field label="Hourly rate">
+                <input
+                  name="hourly_rate"
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  required
+                />
+              </Field>
+              <Field label="Effective from">
+                <input
+                  name="effective_from"
+                  type="date"
+                  defaultValue={new Date().toISOString().slice(0, 10)}
+                  required
+                />
+              </Field>
+              <Field label="Effective to">
+                <input name="effective_to" type="date" />
+              </Field>
+              {createCharge.error && (
+                <p className="form-error">{createCharge.error.message}</p>
+              )}
+              <div className="form-actions">
+                <button
+                  type="button"
+                  className="btn"
+                  onClick={() => setAddingCharge(false)}
+                >
+                  Cancel
+                </button>
+                <button className="btn primary">Save rate</button>
+              </div>
+            </form>
+          )}
+          {own(chargeRates.data).length ? (
+            <div className="compact-list">
+              {own(chargeRates.data).map((x) => (
+                <article key={x.id}>
+                  <FileText />
+                  <div>
+                    <strong>{x.name}</strong>
+                    <small>
+                      £{Number(x.hourly_rate).toFixed(2)} per hour · from{" "}
+                      {new Date(x.effective_from).toLocaleDateString("en-GB")}
+                    </small>
+                  </div>
+                </article>
+              ))}
+            </div>
+          ) : (
+            !addingCharge && <Empty text="No charge rates recorded" />
+          )}
+        </section>
+      </div>
+    </Modal>
+  );
 }
 
-function EmployeeRecord({employee,areas,onClose}:{employee:Row;areas:Row[];onClose:()=>void}){
- const [editing,setEditing]=useState(false);const [editingDbs,setEditingDbs]=useState(false);const [addingPattern,setAddingPattern]=useState(false);const [addingAvailability,setAddingAvailability]=useState(false);const [addingPay,setAddingPay]=useState(false);const update=useUpdateRow('employees');const sensitive=useRows('employee_sensitive','created_at',false);const createSensitive=useCreateRow('employee_sensitive');const updateSensitive=useUpdateRow('employee_sensitive');const patterns=useRows('working_patterns','weekday',true);const availability=useRows('availability_exceptions','starts_at',false);const payRates=useRows('pay_rates','effective_from',false);const createPattern=useCreateRow('working_patterns');const createAvailability=useCreateRow('availability_exceptions');const createPay=useCreateRow('pay_rates');const dbs=sensitive.data?.find(x=>x.employee_id===employee.id);const employeePatterns=patterns.data?.filter(x=>x.employee_id===employee.id)??[];const employeeAvailability=availability.data?.filter(x=>x.employee_id===employee.id)??[];const employeePay=payRates.data?.filter(x=>x.employee_id===employee.id)??[];
- async function save(e:React.FormEvent<HTMLFormElement>){e.preventDefault();await update.mutateAsync({id:employee.id,...Object.fromEntries(new FormData(e.currentTarget))});setEditing(false)}
- async function saveDbs(e:React.FormEvent<HTMLFormElement>){e.preventDefault();const values=Object.fromEntries(new FormData(e.currentTarget));if(dbs)await updateSensitive.mutateAsync({id:dbs.id,...values});else await createSensitive.mutateAsync({...values,employee_id:employee.id});setEditingDbs(false)}
- async function savePattern(e:React.FormEvent<HTMLFormElement>){e.preventDefault();await createPattern.mutateAsync({...Object.fromEntries(new FormData(e.currentTarget)),employee_id:employee.id});setAddingPattern(false)}
- async function saveAvailability(e:React.FormEvent<HTMLFormElement>){e.preventDefault();const values=Object.fromEntries(new FormData(e.currentTarget));await createAvailability.mutateAsync({...values,employee_id:employee.id,available:values.available==='true'});setAddingAvailability(false)}
- async function savePay(e:React.FormEvent<HTMLFormElement>){e.preventDefault();await createPay.mutateAsync({...Object.fromEntries(new FormData(e.currentTarget)),employee_id:employee.id});setAddingPay(false)}
- const weekdays=['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
- return <Modal title={`Employee · ${employee.full_name}`} onClose={onClose}><div className="record-detail"><header className="record-summary"><span className="large-avatar employee-avatar">{employee.full_name.split(' ').map((x:string)=>x[0]).join('').slice(0,2)}</span><div><h3>{employee.full_name}</h3><p>{employee.job_title||'Care team member'}</p></div><Status value={employee.status}/></header>{editing?<form className="form-grid compact-form" onSubmit={save}><Field label="Full name"><input name="full_name" defaultValue={employee.full_name} required/></Field><Field label="Job title"><input name="job_title" defaultValue={employee.job_title??''}/></Field><Field label="Operational area"><select name="area_id" defaultValue={employee.area_id??''} required><option value="" disabled>Select area</option>{areas.filter(a=>a.status==='active').map(a=><option key={a.id} value={a.id}>{a.name}</option>)}</select></Field><Field label="Email"><input name="contact_email" type="email" defaultValue={employee.contact_email??''}/></Field><Field label="Telephone"><input name="contact_phone" defaultValue={employee.contact_phone??''}/></Field><Field label="Start date"><input name="start_date" type="date" defaultValue={employee.start_date??''}/></Field><Field label="Status"><select name="status" defaultValue={employee.status}><option value="active">Active</option><option value="leaver">Leaver</option></select></Field><Field label="Emergency contact"><input name="emergency_contact_name" defaultValue={employee.emergency_contact_name??''}/></Field><Field label="Emergency telephone"><input name="emergency_contact_phone" defaultValue={employee.emergency_contact_phone??''}/></Field>{update.error&&<p className="form-error">{update.error.message}</p>}<div className="form-actions"><button type="button" className="btn" onClick={()=>setEditing(false)}>Cancel</button><button className="btn primary">Save changes</button></div></form>:<><div className="detail-grid"><div><small>Operational area</small><strong><MapPin/>{employee.area?.name||'Not assigned'}</strong></div><div><small>Email</small><strong><Mail/>{employee.contact_email||'Not recorded'}</strong></div><div><small>Telephone</small><strong><Phone/>{employee.contact_phone||'Not recorded'}</strong></div><div><small>Start date</small><strong>{employee.start_date?new Date(employee.start_date).toLocaleDateString('en-GB'):'Not recorded'}</strong></div><div><small>Emergency contact</small><strong>{employee.emergency_contact_name||'Not recorded'} {employee.emergency_contact_phone&&`· ${employee.emergency_contact_phone}`}</strong></div></div><div className="record-actions"><button className="btn primary" onClick={()=>setEditing(true)}>Edit employee</button></div></>}
- <section className="record-section"><div className="section-title"><h3>PVG / DBS check</h3><button className="btn small" onClick={()=>setEditingDbs(true)}>{dbs?'Edit':'Add'} check</button></div>{editingDbs?<form className="form-grid inline-form" onSubmit={saveDbs}><Field label="Check type"><input name="dbs_check_type" defaultValue={dbs?.dbs_check_type??'PVG'}/></Field><Field label="Certificate / membership number"><input name="dbs_certificate_number" defaultValue={dbs?.dbs_certificate_number??''}/></Field><Field label="Issue date"><input name="dbs_issue_date" type="date" defaultValue={dbs?.dbs_issue_date??''}/></Field><Field label="Status"><input name="dbs_status" defaultValue={dbs?.dbs_status??''}/></Field><Field label="Notes"><textarea name="notes" defaultValue={dbs?.notes??''}/></Field>{(createSensitive.error||updateSensitive.error)&&<p className="form-error">{(createSensitive.error||updateSensitive.error)?.message}</p>}<div className="form-actions"><button type="button" className="btn" onClick={()=>setEditingDbs(false)}>Cancel</button><button className="btn primary">Save check</button></div></form>:dbs?<div className="detail-grid"><div><small>Type</small><strong>{dbs.dbs_check_type||'Not recorded'}</strong></div><div><small>Status</small><strong>{dbs.dbs_status||'Not recorded'}</strong></div><div><small>Certificate</small><strong>{dbs.dbs_certificate_number||'Not recorded'}</strong></div><div><small>Issue date</small><strong>{dbs.dbs_issue_date?new Date(dbs.dbs_issue_date).toLocaleDateString('en-GB'):'Not recorded'}</strong></div></div>:<Empty text="No PVG / DBS check recorded"/>}</section>
- <section className="record-section"><div className="section-title"><h3>Working pattern</h3><button className="btn small" onClick={()=>setAddingPattern(true)}>Add hours</button></div>{addingPattern&&<form className="form-grid inline-form" onSubmit={savePattern}><Field label="Day"><select name="weekday" defaultValue="1">{weekdays.map((d,i)=><option key={d} value={i}>{d}</option>)}</select></Field><Field label="Start"><input name="starts_at" type="time" required/></Field><Field label="End"><input name="ends_at" type="time" required/></Field><Field label="Effective from"><input name="effective_from" type="date" defaultValue={new Date().toISOString().slice(0,10)} required/></Field>{createPattern.error&&<p className="form-error">{createPattern.error.message}</p>}<div className="form-actions"><button type="button" className="btn" onClick={()=>setAddingPattern(false)}>Cancel</button><button className="btn primary">Save hours</button></div></form>}{employeePatterns.length?<div className="compact-list">{employeePatterns.map(x=><article key={x.id}><CalendarDays/><div><strong>{weekdays[x.weekday]}</strong><small>{String(x.starts_at).slice(0,5)}–{String(x.ends_at).slice(0,5)}</small></div></article>)}</div>:!addingPattern&&<Empty text="No working pattern recorded"/>}</section>
- <section className="record-section"><div className="section-title"><h3>Availability exceptions</h3><button className="btn small" onClick={()=>setAddingAvailability(true)}>Add exception</button></div>{addingAvailability&&<form className="form-grid inline-form" onSubmit={saveAvailability}><Field label="Starts"><input name="starts_at" type="datetime-local" required/></Field><Field label="Ends"><input name="ends_at" type="datetime-local" required/></Field><Field label="Availability"><select name="available" defaultValue="false"><option value="false">Unavailable</option><option value="true">Available</option></select></Field><Field label="Reason"><input name="reason"/></Field>{createAvailability.error&&<p className="form-error">{createAvailability.error.message}</p>}<div className="form-actions"><button type="button" className="btn" onClick={()=>setAddingAvailability(false)}>Cancel</button><button className="btn primary">Save exception</button></div></form>}{employeeAvailability.length?<div className="compact-list">{employeeAvailability.map(x=><article key={x.id}><CalendarDays/><div><strong>{x.available?'Available':'Unavailable'}</strong><small>{new Date(x.starts_at).toLocaleString('en-GB')}–{new Date(x.ends_at).toLocaleString('en-GB')} · {x.reason||'No reason'}</small></div></article>)}</div>:!addingAvailability&&<Empty text="No availability exceptions"/>}</section>
- <section className="record-section"><div className="section-title"><h3>Pay rates</h3><button className="btn small" onClick={()=>setAddingPay(true)}>Add pay rate</button></div>{addingPay&&<form className="form-grid inline-form" onSubmit={savePay}><Field label="Hourly rate"><input name="hourly_rate" type="number" min="0" step="0.01" required/></Field><Field label="Overtime rate"><input name="overtime_rate" type="number" min="0" step="0.01"/></Field><Field label="Effective from"><input name="effective_from" type="date" defaultValue={new Date().toISOString().slice(0,10)} required/></Field><Field label="Effective to"><input name="effective_to" type="date"/></Field>{createPay.error&&<p className="form-error">{createPay.error.message}</p>}<div className="form-actions"><button type="button" className="btn" onClick={()=>setAddingPay(false)}>Cancel</button><button className="btn primary">Save pay rate</button></div></form>}{employeePay.length?<div className="compact-list">{employeePay.map(x=><article key={x.id}><FileText/><div><strong>£{Number(x.hourly_rate).toFixed(2)} per hour</strong><small>Overtime {x.overtime_rate?`£${Number(x.overtime_rate).toFixed(2)}`:'not set'} · from {new Date(x.effective_from).toLocaleDateString('en-GB')}</small></div></article>)}</div>:!addingPay&&<Empty text="No pay rates recorded"/>}</section>
- </div></Modal>
+function EmployeeRecord({
+  employee,
+  areas,
+  onClose,
+}: {
+  employee: Row;
+  areas: Row[];
+  onClose: () => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [editingDbs, setEditingDbs] = useState(false);
+  const [addingPattern, setAddingPattern] = useState(false);
+  const [addingAvailability, setAddingAvailability] = useState(false);
+  const [addingPay, setAddingPay] = useState(false);
+  const update = useUpdateRow("employees");
+  const sensitive = useRows("employee_sensitive", "created_at", false);
+  const createSensitive = useCreateRow("employee_sensitive");
+  const updateSensitive = useUpdateRow("employee_sensitive");
+  const patterns = useRows("working_patterns", "weekday", true);
+  const availability = useRows("availability_exceptions", "starts_at", false);
+  const payRates = useRows("pay_rates", "effective_from", false);
+  const createPattern = useCreateRow("working_patterns");
+  const createAvailability = useCreateRow("availability_exceptions");
+  const createPay = useCreateRow("pay_rates");
+  const dbs = sensitive.data?.find((x) => x.employee_id === employee.id);
+  const employeePatterns =
+    patterns.data?.filter((x) => x.employee_id === employee.id) ?? [];
+  const employeeAvailability =
+    availability.data?.filter((x) => x.employee_id === employee.id) ?? [];
+  const employeePay =
+    payRates.data?.filter((x) => x.employee_id === employee.id) ?? [];
+  async function save(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    await update.mutateAsync({
+      id: employee.id,
+      ...Object.fromEntries(new FormData(e.currentTarget)),
+    });
+    setEditing(false);
+  }
+  async function saveDbs(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    const values = Object.fromEntries(new FormData(e.currentTarget));
+    if (dbs) await updateSensitive.mutateAsync({ id: dbs.id, ...values });
+    else
+      await createSensitive.mutateAsync({
+        ...values,
+        employee_id: employee.id,
+      });
+    setEditingDbs(false);
+  }
+  async function savePattern(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    await createPattern.mutateAsync({
+      ...Object.fromEntries(new FormData(e.currentTarget)),
+      employee_id: employee.id,
+    });
+    setAddingPattern(false);
+  }
+  async function saveAvailability(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    const values = Object.fromEntries(new FormData(e.currentTarget));
+    await createAvailability.mutateAsync({
+      ...values,
+      employee_id: employee.id,
+      available: values.available === "true",
+    });
+    setAddingAvailability(false);
+  }
+  async function savePay(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    await createPay.mutateAsync({
+      ...Object.fromEntries(new FormData(e.currentTarget)),
+      employee_id: employee.id,
+    });
+    setAddingPay(false);
+  }
+  const weekdays = [
+    "Sunday",
+    "Monday",
+    "Tuesday",
+    "Wednesday",
+    "Thursday",
+    "Friday",
+    "Saturday",
+  ];
+  return (
+    <Modal title={`Employee · ${employee.full_name}`} onClose={onClose}>
+      <div className="record-detail">
+        <header className="record-summary">
+          <span className="large-avatar employee-avatar">
+            {employee.full_name
+              .split(" ")
+              .map((x: string) => x[0])
+              .join("")
+              .slice(0, 2)}
+          </span>
+          <div>
+            <h3>{employee.full_name}</h3>
+            <p>{employee.job_title || "Care team member"}</p>
+          </div>
+          <Status value={employee.status} />
+        </header>
+        {editing ? (
+          <form className="form-grid compact-form" onSubmit={save}>
+            <Field label="Full name">
+              <input
+                name="full_name"
+                defaultValue={employee.full_name}
+                required
+              />
+            </Field>
+            <Field label="Job title">
+              <input name="job_title" defaultValue={employee.job_title ?? ""} />
+            </Field>
+            <Field label="Operational area">
+              <select name="area_id" defaultValue={employee.area_id ?? ""}>
+                <option value="">Not assigned yet</option>
+                {areas
+                  .filter((a) => a.status === "active")
+                  .map((a) => (
+                    <option key={a.id} value={a.id}>
+                      {a.name}
+                    </option>
+                  ))}
+              </select>
+            </Field>
+            <Field label="Email">
+              <input
+                name="contact_email"
+                type="email"
+                defaultValue={employee.contact_email ?? ""}
+              />
+            </Field>
+            <Field label="Telephone">
+              <input
+                name="contact_phone"
+                defaultValue={employee.contact_phone ?? ""}
+              />
+            </Field>
+            <Field label="Start date">
+              <input
+                name="start_date"
+                type="date"
+                defaultValue={employee.start_date ?? ""}
+              />
+            </Field>
+            <Field label="Status">
+              <select name="status" defaultValue={employee.status}>
+                <option value="active">Active</option>
+                <option value="leaver">Leaver</option>
+              </select>
+            </Field>
+            <Field label="Emergency contact">
+              <input
+                name="emergency_contact_name"
+                defaultValue={employee.emergency_contact_name ?? ""}
+              />
+            </Field>
+            <Field label="Emergency telephone">
+              <input
+                name="emergency_contact_phone"
+                defaultValue={employee.emergency_contact_phone ?? ""}
+              />
+            </Field>
+            {update.error && (
+              <p className="form-error">{update.error.message}</p>
+            )}
+            <div className="form-actions">
+              <button
+                type="button"
+                className="btn"
+                onClick={() => setEditing(false)}
+              >
+                Cancel
+              </button>
+              <button className="btn primary">Save changes</button>
+            </div>
+          </form>
+        ) : (
+          <>
+            <div className="detail-grid">
+              <div>
+                <small>Operational area</small>
+                <strong>
+                  <MapPin />
+                  {employee.area?.name || "Not assigned"}
+                </strong>
+              </div>
+              <div>
+                <small>Email</small>
+                <strong>
+                  <Mail />
+                  {employee.contact_email || "Not recorded"}
+                </strong>
+              </div>
+              <div>
+                <small>Telephone</small>
+                <strong>
+                  <Phone />
+                  {employee.contact_phone || "Not recorded"}
+                </strong>
+              </div>
+              <div>
+                <small>Start date</small>
+                <strong>
+                  {employee.start_date
+                    ? new Date(employee.start_date).toLocaleDateString("en-GB")
+                    : "Not recorded"}
+                </strong>
+              </div>
+              <div>
+                <small>Emergency contact</small>
+                <strong>
+                  {employee.emergency_contact_name || "Not recorded"}{" "}
+                  {employee.emergency_contact_phone &&
+                    `· ${employee.emergency_contact_phone}`}
+                </strong>
+              </div>
+            </div>
+            <div className="record-actions">
+              <button className="btn primary" onClick={() => setEditing(true)}>
+                Edit employee
+              </button>
+            </div>
+          </>
+        )}
+        <section className="record-section">
+          <div className="section-title">
+            <h3>PVG / DBS check</h3>
+            <button className="btn small" onClick={() => setEditingDbs(true)}>
+              {dbs ? "Edit" : "Add"} check
+            </button>
+          </div>
+          {editingDbs ? (
+            <form className="form-grid inline-form" onSubmit={saveDbs}>
+              <Field label="Check type">
+                <input
+                  name="dbs_check_type"
+                  defaultValue={dbs?.dbs_check_type ?? "PVG"}
+                />
+              </Field>
+              <Field label="Certificate / membership number">
+                <input
+                  name="dbs_certificate_number"
+                  defaultValue={dbs?.dbs_certificate_number ?? ""}
+                />
+              </Field>
+              <Field label="Issue date">
+                <input
+                  name="dbs_issue_date"
+                  type="date"
+                  defaultValue={dbs?.dbs_issue_date ?? ""}
+                />
+              </Field>
+              <Field label="Status">
+                <input name="dbs_status" defaultValue={dbs?.dbs_status ?? ""} />
+              </Field>
+              <Field label="Notes">
+                <textarea name="notes" defaultValue={dbs?.notes ?? ""} />
+              </Field>
+              {(createSensitive.error || updateSensitive.error) && (
+                <p className="form-error">
+                  {(createSensitive.error || updateSensitive.error)?.message}
+                </p>
+              )}
+              <div className="form-actions">
+                <button
+                  type="button"
+                  className="btn"
+                  onClick={() => setEditingDbs(false)}
+                >
+                  Cancel
+                </button>
+                <button className="btn primary">Save check</button>
+              </div>
+            </form>
+          ) : dbs ? (
+            <div className="detail-grid">
+              <div>
+                <small>Type</small>
+                <strong>{dbs.dbs_check_type || "Not recorded"}</strong>
+              </div>
+              <div>
+                <small>Status</small>
+                <strong>{dbs.dbs_status || "Not recorded"}</strong>
+              </div>
+              <div>
+                <small>Certificate</small>
+                <strong>{dbs.dbs_certificate_number || "Not recorded"}</strong>
+              </div>
+              <div>
+                <small>Issue date</small>
+                <strong>
+                  {dbs.dbs_issue_date
+                    ? new Date(dbs.dbs_issue_date).toLocaleDateString("en-GB")
+                    : "Not recorded"}
+                </strong>
+              </div>
+            </div>
+          ) : (
+            <Empty text="No PVG / DBS check recorded" />
+          )}
+        </section>
+        <section className="record-section">
+          <div className="section-title">
+            <h3>Working pattern</h3>
+            <button
+              className="btn small"
+              onClick={() => setAddingPattern(true)}
+            >
+              Add hours
+            </button>
+          </div>
+          {addingPattern && (
+            <form className="form-grid inline-form" onSubmit={savePattern}>
+              <Field label="Day">
+                <select name="weekday" defaultValue="1">
+                  {weekdays.map((d, i) => (
+                    <option key={d} value={i}>
+                      {d}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+              <Field label="Start">
+                <input name="starts_at" type="time" required />
+              </Field>
+              <Field label="End">
+                <input name="ends_at" type="time" required />
+              </Field>
+              <Field label="Effective from">
+                <input
+                  name="effective_from"
+                  type="date"
+                  defaultValue={new Date().toISOString().slice(0, 10)}
+                  required
+                />
+              </Field>
+              {createPattern.error && (
+                <p className="form-error">{createPattern.error.message}</p>
+              )}
+              <div className="form-actions">
+                <button
+                  type="button"
+                  className="btn"
+                  onClick={() => setAddingPattern(false)}
+                >
+                  Cancel
+                </button>
+                <button className="btn primary">Save hours</button>
+              </div>
+            </form>
+          )}
+          {employeePatterns.length ? (
+            <div className="compact-list">
+              {employeePatterns.map((x) => (
+                <article key={x.id}>
+                  <CalendarDays />
+                  <div>
+                    <strong>{weekdays[x.weekday]}</strong>
+                    <small>
+                      {String(x.starts_at).slice(0, 5)}–
+                      {String(x.ends_at).slice(0, 5)}
+                    </small>
+                  </div>
+                </article>
+              ))}
+            </div>
+          ) : (
+            !addingPattern && <Empty text="No working pattern recorded" />
+          )}
+        </section>
+        <section className="record-section">
+          <div className="section-title">
+            <h3>Availability exceptions</h3>
+            <button
+              className="btn small"
+              onClick={() => setAddingAvailability(true)}
+            >
+              Add exception
+            </button>
+          </div>
+          {addingAvailability && (
+            <form className="form-grid inline-form" onSubmit={saveAvailability}>
+              <Field label="Starts">
+                <input name="starts_at" type="datetime-local" required />
+              </Field>
+              <Field label="Ends">
+                <input name="ends_at" type="datetime-local" required />
+              </Field>
+              <Field label="Availability">
+                <select name="available" defaultValue="false">
+                  <option value="false">Unavailable</option>
+                  <option value="true">Available</option>
+                </select>
+              </Field>
+              <Field label="Reason">
+                <input name="reason" />
+              </Field>
+              {createAvailability.error && (
+                <p className="form-error">{createAvailability.error.message}</p>
+              )}
+              <div className="form-actions">
+                <button
+                  type="button"
+                  className="btn"
+                  onClick={() => setAddingAvailability(false)}
+                >
+                  Cancel
+                </button>
+                <button className="btn primary">Save exception</button>
+              </div>
+            </form>
+          )}
+          {employeeAvailability.length ? (
+            <div className="compact-list">
+              {employeeAvailability.map((x) => (
+                <article key={x.id}>
+                  <CalendarDays />
+                  <div>
+                    <strong>{x.available ? "Available" : "Unavailable"}</strong>
+                    <small>
+                      {new Date(x.starts_at).toLocaleString("en-GB")}–
+                      {new Date(x.ends_at).toLocaleString("en-GB")} ·{" "}
+                      {x.reason || "No reason"}
+                    </small>
+                  </div>
+                </article>
+              ))}
+            </div>
+          ) : (
+            !addingAvailability && <Empty text="No availability exceptions" />
+          )}
+        </section>
+        <section className="record-section">
+          <div className="section-title">
+            <h3>Pay rates</h3>
+            <button className="btn small" onClick={() => setAddingPay(true)}>
+              Add pay rate
+            </button>
+          </div>
+          {addingPay && (
+            <form className="form-grid inline-form" onSubmit={savePay}>
+              <Field label="Hourly rate">
+                <input
+                  name="hourly_rate"
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  required
+                />
+              </Field>
+              <Field label="Overtime rate">
+                <input name="overtime_rate" type="number" min="0" step="0.01" />
+              </Field>
+              <Field label="Effective from">
+                <input
+                  name="effective_from"
+                  type="date"
+                  defaultValue={new Date().toISOString().slice(0, 10)}
+                  required
+                />
+              </Field>
+              <Field label="Effective to">
+                <input name="effective_to" type="date" />
+              </Field>
+              {createPay.error && (
+                <p className="form-error">{createPay.error.message}</p>
+              )}
+              <div className="form-actions">
+                <button
+                  type="button"
+                  className="btn"
+                  onClick={() => setAddingPay(false)}
+                >
+                  Cancel
+                </button>
+                <button className="btn primary">Save pay rate</button>
+              </div>
+            </form>
+          )}
+          {employeePay.length ? (
+            <div className="compact-list">
+              {employeePay.map((x) => (
+                <article key={x.id}>
+                  <FileText />
+                  <div>
+                    <strong>
+                      £{Number(x.hourly_rate).toFixed(2)} per hour
+                    </strong>
+                    <small>
+                      Overtime{" "}
+                      {x.overtime_rate
+                        ? `£${Number(x.overtime_rate).toFixed(2)}`
+                        : "not set"}{" "}
+                      · from{" "}
+                      {new Date(x.effective_from).toLocaleDateString("en-GB")}
+                    </small>
+                  </div>
+                </article>
+              ))}
+            </div>
+          ) : (
+            !addingPay && <Empty text="No pay rates recorded" />
+          )}
+        </section>
+      </div>
+    </Modal>
+  );
 }
 
-export function PeoplePage(){
- const [tab,setTab]=useState<'service_users'|'employees'>('service_users'); const [search,setSearch]=useState(''); const [adding,setAdding]=useState(false); const [selected,setSelected]=useState<Row|null>(null);
- const query=useRows(tab,'created_at',false); const areas=useRows('operational_areas','name',true);const create=useCreateRow(tab);
- const rows=useMemo(()=>(query.data??[]).filter(r=>`${r.full_name} ${r.preferred_name??''} ${r.job_title??''}`.toLowerCase().includes(search.toLowerCase())),[query.data,search]);
- async function submit(e:React.FormEvent<HTMLFormElement>){e.preventDefault();const created=await create.mutateAsync(Object.fromEntries(new FormData(e.currentTarget)));setAdding(false);setSelected(created)}
- return <><PageHeader title="People" description="Manage the people you support and your care team." action={tab==='service_users'?'Add person':'Add employee'} onAction={()=>setAdding(true)}/>
- <div className="toolbar"><div className="tabs"><button className={tab==='service_users'?'active':''} onClick={()=>{setTab('service_users');setSelected(null)}}><UserRound/>People supported</button><button className={tab==='employees'?'active':''} onClick={()=>{setTab('employees');setSelected(null)}}><UsersRound/>Employees</button></div><SearchBox value={search} onChange={setSearch} placeholder="Search people…"/></div>
- {query.isLoading?<Loading/>:query.error?<DataError message={query.error.message}/>:rows.length===0?<Empty/>:<div className="people-grid">{rows.map(row=>tab==='service_users'?<article className="person-card" key={row.id}><div className="person-card-head"><span className="large-avatar">{row.full_name.split(' ').map((v:string)=>v[0]).join('').slice(0,2)}</span><div><h3>{row.full_name}</h3><p>Known as {row.preferred_name||row.full_name.split(' ')[0]}</p></div><Status value={row.status}/></div>{row.important_alerts&&<div className="alert-strip">{row.important_alerts}</div>}<dl><div><MapPin/><dd>{row.address||'No address recorded'}</dd></div><div><Phone/><dd>{row.contact_phone||'No phone recorded'}</dd></div></dl><footer><button onClick={()=>setSelected(row)}>View care record</button><span>Care record</span></footer></article>:<article className="person-card employee" key={row.id}><div className="person-card-head"><span className="large-avatar employee-avatar">{row.full_name.split(' ').map((v:string)=>v[0]).join('').slice(0,2)}</span><div><h3>{row.full_name}</h3><p>{row.job_title||'Care team member'}</p></div><Status value={row.status}/></div><dl><div><Mail/><dd>{row.contact_email||'No email recorded'}</dd></div><div><Phone/><dd>{row.contact_phone||'No phone recorded'}</dd></div></dl><footer><button onClick={()=>setSelected(row)}>View employee</button><span>Employee record</span></footer></article>)}</div>}
- {adding&&<Modal title={tab==='service_users'?'Add person supported':'Add employee'} onClose={()=>setAdding(false)}><form className="form-grid" onSubmit={submit}><Field label="Full name"><input name="full_name" required autoFocus/></Field><Field label="Operational area"><select name="area_id" required defaultValue=""><option value="" disabled>Select area</option>{areas.data?.filter(a=>a.status==='active').map(a=><option key={a.id} value={a.id}>{a.name}</option>)}</select></Field>{tab==='service_users'?<><Field label="Preferred name"><input name="preferred_name"/></Field><Field label="Start date"><input name="start_date" type="date"/></Field><Field label="Telephone"><input name="contact_phone"/></Field><Field label="Funding"><select name="funding_type" defaultValue="private"><option value="private">Private</option><option value="local_authority">Local authority</option><option value="nhs">NHS</option><option value="mixed">Mixed</option><option value="other">Other</option></select></Field><Field label="Payer name"><input name="payer_name"/></Field><Field label="Payer reference"><input name="payer_reference"/></Field><input type="hidden" name="payment_terms_days" value="30"/><Field label="Address"><textarea name="address"/></Field><Field label="Communication requirements"><textarea name="communication_requirements"/></Field><Field label="Accessibility requirements"><textarea name="accessibility_requirements"/></Field><Field label="Important alerts"><textarea name="important_alerts" placeholder="Allergies, risks or critical information"/></Field><input type="hidden" name="status" value="active"/></>:<><Field label="Job title"><input name="job_title"/></Field><Field label="Email"><input name="contact_email" type="email"/></Field><Field label="Telephone"><input name="contact_phone"/></Field><Field label="Start date"><input name="start_date" type="date"/></Field><Field label="Emergency contact"><input name="emergency_contact_name"/></Field><Field label="Emergency telephone"><input name="emergency_contact_phone"/></Field><input type="hidden" name="status" value="active"/></>}<div className="form-actions"><button type="button" className="btn" onClick={()=>setAdding(false)}>Cancel</button><button className="btn primary" disabled={create.isPending}>{create.isPending?'Saving…':'Save record'}</button></div>{create.error&&<p className="form-error">{create.error.message}</p>}</form></Modal>}
- {selected&&(tab==='service_users'?<PersonRecord person={query.data?.find(x=>x.id===selected.id)??selected} areas={areas.data??[]} onClose={()=>setSelected(null)}/>:<EmployeeRecord employee={query.data?.find(x=>x.id===selected.id)??selected} areas={areas.data??[]} onClose={()=>setSelected(null)}/>)}
- </>
+export function PeoplePage() {
+  const [tab, setTab] = useState<"service_users" | "employees">(
+    "service_users",
+  );
+  const [search, setSearch] = useState("");
+  const [adding, setAdding] = useState(false);
+  const [selected, setSelected] = useState<Row | null>(null);
+  const query = useRows(tab, "created_at", false);
+  const areas = useRows("operational_areas", "name", true);
+  const create = useCreateRow(tab);
+  const rows = useMemo(
+    () =>
+      (query.data ?? []).filter((r) =>
+        `${r.full_name} ${r.preferred_name ?? ""} ${r.job_title ?? ""}`
+          .toLowerCase()
+          .includes(search.toLowerCase()),
+      ),
+    [query.data, search],
+  );
+  async function submit(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    const created = await create.mutateAsync(
+      Object.fromEntries(new FormData(e.currentTarget)),
+    );
+    setAdding(false);
+    setSelected(created);
+  }
+  return (
+    <>
+      <PageHeader
+        title="People"
+        description="Manage the people you support and your care team."
+        action={tab === "service_users" ? "Add person" : "Add employee"}
+        onAction={() => setAdding(true)}
+      />
+      <div className="toolbar">
+        <div className="tabs">
+          <button
+            className={tab === "service_users" ? "active" : ""}
+            onClick={() => {
+              setTab("service_users");
+              setSelected(null);
+            }}
+          >
+            <UserRound />
+            People supported
+          </button>
+          <button
+            className={tab === "employees" ? "active" : ""}
+            onClick={() => {
+              setTab("employees");
+              setSelected(null);
+            }}
+          >
+            <UsersRound />
+            Employees
+          </button>
+        </div>
+        <SearchBox
+          value={search}
+          onChange={setSearch}
+          placeholder="Search people…"
+        />
+      </div>
+      {query.isLoading ? (
+        <Loading />
+      ) : query.error ? (
+        <DataError message={query.error.message} />
+      ) : rows.length === 0 ? (
+        <Empty />
+      ) : (
+        <div className="people-grid">
+          {rows.map((row) =>
+            tab === "service_users" ? (
+              <article className="person-card" key={row.id}>
+                <div className="person-card-head">
+                  <span className="large-avatar">
+                    {row.full_name
+                      .split(" ")
+                      .map((v: string) => v[0])
+                      .join("")
+                      .slice(0, 2)}
+                  </span>
+                  <div>
+                    <h3>{row.full_name}</h3>
+                    <p>
+                      Known as{" "}
+                      {row.preferred_name || row.full_name.split(" ")[0]}
+                    </p>
+                  </div>
+                  <Status value={row.status} />
+                </div>
+                {row.important_alerts && (
+                  <div className="alert-strip">{row.important_alerts}</div>
+                )}
+                <dl>
+                  <div>
+                    <MapPin />
+                    <dd>{row.address || "No address recorded"}</dd>
+                  </div>
+                  <div>
+                    <Phone />
+                    <dd>{row.contact_phone || "No phone recorded"}</dd>
+                  </div>
+                </dl>
+                <footer>
+                  <button onClick={() => setSelected(row)}>
+                    View care record
+                  </button>
+                  <span>Care record</span>
+                </footer>
+              </article>
+            ) : (
+              <article className="person-card employee" key={row.id}>
+                <div className="person-card-head">
+                  <span className="large-avatar employee-avatar">
+                    {row.full_name
+                      .split(" ")
+                      .map((v: string) => v[0])
+                      .join("")
+                      .slice(0, 2)}
+                  </span>
+                  <div>
+                    <h3>{row.full_name}</h3>
+                    <p>{row.job_title || "Care team member"}</p>
+                  </div>
+                  <Status value={row.status} />
+                </div>
+                <dl>
+                  <div>
+                    <Mail />
+                    <dd>{row.contact_email || "No email recorded"}</dd>
+                  </div>
+                  <div>
+                    <Phone />
+                    <dd>{row.contact_phone || "No phone recorded"}</dd>
+                  </div>
+                </dl>
+                <footer>
+                  <button onClick={() => setSelected(row)}>
+                    View employee
+                  </button>
+                  <span>Employee record</span>
+                </footer>
+              </article>
+            ),
+          )}
+        </div>
+      )}
+      {adding && (
+        <Modal
+          title={
+            tab === "service_users" ? "Add person supported" : "Add employee"
+          }
+          onClose={() => setAdding(false)}
+        >
+          <form className="form-grid" onSubmit={submit}>
+            <Field label="Full name">
+              <input name="full_name" required autoFocus />
+            </Field>
+            <Field
+              label={
+                tab === "service_users"
+                  ? "Operational area"
+                  : "Operational area (optional during setup)"
+              }
+            >
+              <select
+                name="area_id"
+                required={tab === "service_users"}
+                defaultValue=""
+              >
+                <option value="" disabled={tab === "service_users"}>
+                  {tab === "service_users" ? "Select area" : "Not assigned yet"}
+                </option>
+                {areas.data
+                  ?.filter((a) => a.status === "active")
+                  .map((a) => (
+                    <option key={a.id} value={a.id}>
+                      {a.name}
+                    </option>
+                  ))}
+              </select>
+            </Field>
+            {tab === "service_users" ? (
+              <>
+                <Field label="Preferred name">
+                  <input name="preferred_name" />
+                </Field>
+                <Field label="Start date">
+                  <input name="start_date" type="date" />
+                </Field>
+                <Field label="Telephone">
+                  <input name="contact_phone" />
+                </Field>
+                <Field label="Funding">
+                  <select name="funding_type" defaultValue="private">
+                    <option value="private">Private</option>
+                    <option value="local_authority">Local authority</option>
+                    <option value="nhs">NHS</option>
+                    <option value="mixed">Mixed</option>
+                    <option value="other">Other</option>
+                  </select>
+                </Field>
+                <Field label="Payer name">
+                  <input name="payer_name" />
+                </Field>
+                <Field label="Payer reference">
+                  <input name="payer_reference" />
+                </Field>
+                <input type="hidden" name="payment_terms_days" value="30" />
+                <Field label="Address">
+                  <textarea name="address" />
+                </Field>
+                <Field label="Communication requirements">
+                  <textarea name="communication_requirements" />
+                </Field>
+                <Field label="Accessibility requirements">
+                  <textarea name="accessibility_requirements" />
+                </Field>
+                <Field label="Important alerts">
+                  <textarea
+                    name="important_alerts"
+                    placeholder="Allergies, risks or critical information"
+                  />
+                </Field>
+                <input type="hidden" name="status" value="active" />
+              </>
+            ) : (
+              <>
+                <Field label="Job title">
+                  <input name="job_title" />
+                </Field>
+                <Field label="Email">
+                  <input name="contact_email" type="email" />
+                </Field>
+                <Field label="Telephone">
+                  <input name="contact_phone" />
+                </Field>
+                <Field label="Start date">
+                  <input name="start_date" type="date" />
+                </Field>
+                <Field label="Emergency contact">
+                  <input name="emergency_contact_name" />
+                </Field>
+                <Field label="Emergency telephone">
+                  <input name="emergency_contact_phone" />
+                </Field>
+                <input type="hidden" name="status" value="active" />
+              </>
+            )}
+            <div className="form-actions">
+              <button
+                type="button"
+                className="btn"
+                onClick={() => setAdding(false)}
+              >
+                Cancel
+              </button>
+              <button className="btn primary" disabled={create.isPending}>
+                {create.isPending ? "Saving…" : "Save record"}
+              </button>
+            </div>
+            {create.error && (
+              <p className="form-error">{create.error.message}</p>
+            )}
+          </form>
+        </Modal>
+      )}
+      {selected &&
+        (tab === "service_users" ? (
+          <PersonRecord
+            person={query.data?.find((x) => x.id === selected.id) ?? selected}
+            areas={areas.data ?? []}
+            onClose={() => setSelected(null)}
+          />
+        ) : (
+          <EmployeeRecord
+            employee={query.data?.find((x) => x.id === selected.id) ?? selected}
+            areas={areas.data ?? []}
+            onClose={() => setSelected(null)}
+          />
+        ))}
+    </>
+  );
 }

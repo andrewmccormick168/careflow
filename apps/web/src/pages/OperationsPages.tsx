@@ -1,88 +1,2065 @@
-import { useMemo, useState } from 'react';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { Banknote, Building2, CheckCircle2, PoundSterling as CirclePoundSterling, Download, FileClock, FileText, Gauge, History, Mail, MapPin, Receipt, Settings2, ShieldCheck, UsersRound } from 'lucide-react';
-import { DataError, Empty, Field, Loading, Modal, PageHeader, Status } from '@/components/ui';
-import { useAuth } from '@/lib/authContext';
-import { type Row, useCreateInvitation, useCreateRow, useRows, useUpdateRow } from '@/lib/data';
-import { supabase } from '@/lib/supabaseClient';
+import { useMemo, useState } from "react";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import {
+  Banknote,
+  Building2,
+  CheckCircle2,
+  PoundSterling as CirclePoundSterling,
+  Download,
+  FileClock,
+  FileText,
+  Gauge,
+  History,
+  Mail,
+  MapPin,
+  Receipt,
+  Settings2,
+  ShieldCheck,
+  UsersRound,
+} from "lucide-react";
+import {
+  DataError,
+  Empty,
+  Field,
+  Loading,
+  Modal,
+  PageHeader,
+  Status,
+} from "@/components/ui";
+import { useAuth } from "@/lib/authContext";
+import {
+  type Row,
+  useCreateInvitation,
+  useCreateRow,
+  useRows,
+  useSaveOperationalArea,
+  useUpdateRow,
+} from "@/lib/data";
+import { supabase } from "@/lib/supabaseClient";
 
-const money=(v:number)=>new Intl.NumberFormat('en-GB',{style:'currency',currency:'GBP'}).format(v);
-const csvCell=(value:unknown)=>`"${String(value??'').replaceAll('"','""')}"`;
-function downloadCsv(name:string,headers:string[],rows:unknown[][]){const csv=[headers,...rows].map(row=>row.map(csvCell).join(',')).join('\n');const url=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'}));const a=document.createElement('a');a.href=url;a.download=name;a.click();URL.revokeObjectURL(url)}
-
-function TimesheetForm({employees,record,onClose}:{employees:Row[];record?:Row|undefined;onClose:()=>void}){
- const create=useCreateRow('timesheets');const update=useUpdateRow('timesheets');const mutation=record?update:create;
- async function submit(e:React.FormEvent<HTMLFormElement>){e.preventDefault();const values=Object.fromEntries(new FormData(e.currentTarget));const {regular_hours,overtime_hours,...fields}=values;const row={...fields,regular_minutes:Math.round(Number(regular_hours)*60),overtime_minutes:Math.round(Number(overtime_hours)*60)};await mutation.mutateAsync(record?{id:record.id,...row}:row);onClose()}
- return <form className="form-grid" onSubmit={submit}><Field label="Employee"><select name="employee_id" defaultValue={record?.employee_id??''} disabled={Boolean(record)} required><option value="" disabled>Select employee</option>{employees.map(x=><option key={x.id} value={x.id}>{x.full_name}</option>)}</select></Field><Field label="Status"><select name="status" defaultValue={record?.status??'draft'}><option value="draft">Draft</option><option value="submitted">Submitted</option><option value="approved">Approved</option><option value="rejected">Rejected</option><option value="exported">Exported</option></select></Field><Field label="Period start"><input name="period_start" type="date" defaultValue={record?.period_start??''} required/></Field><Field label="Period end"><input name="period_end" type="date" defaultValue={record?.period_end??''} required/></Field><Field label="Regular hours"><input name="regular_hours" type="number" step="0.25" min="0" defaultValue={record?Number(record.regular_minutes)/60:0} required/></Field><Field label="Overtime hours"><input name="overtime_hours" type="number" step="0.25" min="0" defaultValue={record?Number(record.overtime_minutes)/60:0} required/></Field><Field label="Notes"><textarea name="notes" defaultValue={record?.notes??''}/></Field>{mutation.error&&<p className="form-error">{mutation.error.message}</p>}<div className="form-actions"><button type="button" className="btn" onClick={onClose}>Cancel</button><button className="btn primary" disabled={mutation.isPending}>Save timesheet</button></div></form>
+const money = (v: number) =>
+  new Intl.NumberFormat("en-GB", { style: "currency", currency: "GBP" }).format(
+    v,
+  );
+const csvCell = (value: unknown) =>
+  `"${String(value ?? "").replaceAll('"', '""')}"`;
+function downloadCsv(name: string, headers: string[], rows: unknown[][]) {
+  const csv = [headers, ...rows]
+    .map((row) => row.map(csvCell).join(","))
+    .join("\n");
+  const url = URL.createObjectURL(
+    new Blob([csv], { type: "text/csv;charset=utf-8" }),
+  );
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = name;
+  a.click();
+  URL.revokeObjectURL(url);
 }
 
-function ExpenseForm({employees,record,onClose}:{employees:Row[];record?:Row|undefined;onClose:()=>void}){
- const create=useCreateRow('expenses');const update=useUpdateRow('expenses');const mutation=record?update:create;
- async function submit(e:React.FormEvent<HTMLFormElement>){e.preventDefault();const values=Object.fromEntries(new FormData(e.currentTarget));await mutation.mutateAsync(record?{id:record.id,...values}:values);onClose()}
- return <form className="form-grid" onSubmit={submit}><Field label="Employee"><select name="employee_id" defaultValue={record?.employee_id??''} disabled={Boolean(record)} required><option value="" disabled>Select employee</option>{employees.map(x=><option key={x.id} value={x.id}>{x.full_name}</option>)}</select></Field><Field label="Date"><input name="expense_date" type="date" defaultValue={record?.expense_date??new Date().toISOString().slice(0,10)} required/></Field><Field label="Category"><input name="category" defaultValue={record?.category??''} required/></Field><Field label="Amount"><input name="amount" type="number" min="0" step="0.01" defaultValue={record?.amount??''} required/></Field><Field label="Description"><textarea name="description" defaultValue={record?.description??''}/></Field><Field label="Status"><select name="status" defaultValue={record?.status??'submitted'}><option value="draft">Draft</option><option value="submitted">Submitted</option><option value="approved">Approved</option><option value="rejected">Rejected</option><option value="paid">Paid</option></select></Field>{mutation.error&&<p className="form-error">{mutation.error.message}</p>}<div className="form-actions"><button type="button" className="btn" onClick={onClose}>Cancel</button><button className="btn primary" disabled={mutation.isPending}>Save expense</button></div></form>
+function TimesheetForm({
+  employees,
+  record,
+  onClose,
+}: {
+  employees: Row[];
+  record?: Row | undefined;
+  onClose: () => void;
+}) {
+  const create = useCreateRow("timesheets");
+  const update = useUpdateRow("timesheets");
+  const mutation = record ? update : create;
+  async function submit(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    const values = Object.fromEntries(new FormData(e.currentTarget));
+    const { regular_hours, overtime_hours, ...fields } = values;
+    const row = {
+      ...fields,
+      regular_minutes: Math.round(Number(regular_hours) * 60),
+      overtime_minutes: Math.round(Number(overtime_hours) * 60),
+    };
+    await mutation.mutateAsync(record ? { id: record.id, ...row } : row);
+    onClose();
+  }
+  return (
+    <form className="form-grid" onSubmit={submit}>
+      <Field label="Employee">
+        <select
+          name="employee_id"
+          defaultValue={record?.employee_id ?? ""}
+          disabled={Boolean(record)}
+          required
+        >
+          <option value="" disabled>
+            Select employee
+          </option>
+          {employees.map((x) => (
+            <option key={x.id} value={x.id}>
+              {x.full_name}
+            </option>
+          ))}
+        </select>
+      </Field>
+      <Field label="Status">
+        <select name="status" defaultValue={record?.status ?? "draft"}>
+          <option value="draft">Draft</option>
+          <option value="submitted">Submitted</option>
+          <option value="approved">Approved</option>
+          <option value="rejected">Rejected</option>
+          <option value="exported">Exported</option>
+        </select>
+      </Field>
+      <Field label="Period start">
+        <input
+          name="period_start"
+          type="date"
+          defaultValue={record?.period_start ?? ""}
+          required
+        />
+      </Field>
+      <Field label="Period end">
+        <input
+          name="period_end"
+          type="date"
+          defaultValue={record?.period_end ?? ""}
+          required
+        />
+      </Field>
+      <Field label="Regular hours">
+        <input
+          name="regular_hours"
+          type="number"
+          step="0.25"
+          min="0"
+          defaultValue={record ? Number(record.regular_minutes) / 60 : 0}
+          required
+        />
+      </Field>
+      <Field label="Overtime hours">
+        <input
+          name="overtime_hours"
+          type="number"
+          step="0.25"
+          min="0"
+          defaultValue={record ? Number(record.overtime_minutes) / 60 : 0}
+          required
+        />
+      </Field>
+      <Field label="Notes">
+        <textarea name="notes" defaultValue={record?.notes ?? ""} />
+      </Field>
+      {mutation.error && <p className="form-error">{mutation.error.message}</p>}
+      <div className="form-actions">
+        <button type="button" className="btn" onClick={onClose}>
+          Cancel
+        </button>
+        <button className="btn primary" disabled={mutation.isPending}>
+          Save timesheet
+        </button>
+      </div>
+    </form>
+  );
 }
 
-function MileageForm({employees,record,onClose}:{employees:Row[];record?:Row|undefined;onClose:()=>void}){
- const create=useCreateRow('mileage_claims');const update=useUpdateRow('mileage_claims');const mutation=record?update:create;
- async function submit(e:React.FormEvent<HTMLFormElement>){e.preventDefault();const values=Object.fromEntries(new FormData(e.currentTarget));await mutation.mutateAsync(record?{id:record.id,...values}:values);onClose()}
- return <form className="form-grid" onSubmit={submit}><Field label="Employee"><select name="employee_id" defaultValue={record?.employee_id??''} disabled={Boolean(record)} required><option value="" disabled>Select employee</option>{employees.map(x=><option key={x.id} value={x.id}>{x.full_name}</option>)}</select></Field><Field label="Journey date"><input name="journey_date" type="date" defaultValue={record?.journey_date??new Date().toISOString().slice(0,10)} required/></Field><Field label="Origin"><input name="origin" defaultValue={record?.origin??''}/></Field><Field label="Destination"><input name="destination" defaultValue={record?.destination??''}/></Field><Field label="Miles"><input name="miles" type="number" min="0" step="0.1" defaultValue={record?.miles??0} required/></Field><Field label="Rate per mile"><input name="rate" type="number" min="0" step="0.0001" defaultValue={record?.rate??0.45} required/></Field><Field label="Purpose"><textarea name="purpose" defaultValue={record?.purpose??''}/></Field><Field label="Status"><select name="status" defaultValue={record?.status??'submitted'}><option value="draft">Draft</option><option value="submitted">Submitted</option><option value="approved">Approved</option><option value="rejected">Rejected</option><option value="paid">Paid</option></select></Field>{mutation.error&&<p className="form-error">{mutation.error.message}</p>}<div className="form-actions"><button type="button" className="btn" onClick={onClose}>Cancel</button><button className="btn primary" disabled={mutation.isPending}>Save mileage</button></div></form>
+function ExpenseForm({
+  employees,
+  record,
+  onClose,
+}: {
+  employees: Row[];
+  record?: Row | undefined;
+  onClose: () => void;
+}) {
+  const create = useCreateRow("expenses");
+  const update = useUpdateRow("expenses");
+  const mutation = record ? update : create;
+  async function submit(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    const values = Object.fromEntries(new FormData(e.currentTarget));
+    await mutation.mutateAsync(record ? { id: record.id, ...values } : values);
+    onClose();
+  }
+  return (
+    <form className="form-grid" onSubmit={submit}>
+      <Field label="Employee">
+        <select
+          name="employee_id"
+          defaultValue={record?.employee_id ?? ""}
+          disabled={Boolean(record)}
+          required
+        >
+          <option value="" disabled>
+            Select employee
+          </option>
+          {employees.map((x) => (
+            <option key={x.id} value={x.id}>
+              {x.full_name}
+            </option>
+          ))}
+        </select>
+      </Field>
+      <Field label="Date">
+        <input
+          name="expense_date"
+          type="date"
+          defaultValue={
+            record?.expense_date ?? new Date().toISOString().slice(0, 10)
+          }
+          required
+        />
+      </Field>
+      <Field label="Category">
+        <input name="category" defaultValue={record?.category ?? ""} required />
+      </Field>
+      <Field label="Amount">
+        <input
+          name="amount"
+          type="number"
+          min="0"
+          step="0.01"
+          defaultValue={record?.amount ?? ""}
+          required
+        />
+      </Field>
+      <Field label="Description">
+        <textarea name="description" defaultValue={record?.description ?? ""} />
+      </Field>
+      <Field label="Status">
+        <select name="status" defaultValue={record?.status ?? "submitted"}>
+          <option value="draft">Draft</option>
+          <option value="submitted">Submitted</option>
+          <option value="approved">Approved</option>
+          <option value="rejected">Rejected</option>
+          <option value="paid">Paid</option>
+        </select>
+      </Field>
+      {mutation.error && <p className="form-error">{mutation.error.message}</p>}
+      <div className="form-actions">
+        <button type="button" className="btn" onClick={onClose}>
+          Cancel
+        </button>
+        <button className="btn primary" disabled={mutation.isPending}>
+          Save expense
+        </button>
+      </div>
+    </form>
+  );
 }
 
-export function WorkforcePage(){
- const [tab,setTab]=useState<'timesheets'|'expenses'|'mileage'>('timesheets');const [adding,setAdding]=useState(false);const [selected,setSelected]=useState<Row|null>(null);const times=useRows('timesheets','period_end',false);const expenses=useRows('expenses','expense_date',false);const mileage=useRows('mileage_claims','journey_date',false);const employees=useRows('employees','full_name',true);const q=tab==='timesheets'?times:tab==='expenses'?expenses:mileage;const close=()=>{setAdding(false);setSelected(null)};
- function exportPayroll(){downloadCsv(`careflow-payroll-${new Date().toISOString().slice(0,10)}.csv`,['Employee','Period start','Period end','Regular minutes','Overtime minutes','Status'],(times.data??[]).map(t=>[t.employee?.full_name,t.period_start,t.period_end,t.regular_minutes,t.overtime_minutes,t.status]))}
- return <><PageHeader title="Workforce" description="Timesheets, expenses and mileage ready for review and payroll." action={tab==='timesheets'?'Add timesheet':tab==='expenses'?'Add expense':'Add mileage'} onAction={()=>setAdding(true)}/><div className="toolbar"><div className="tabs"><button className={tab==='timesheets'?'active':''} onClick={()=>{setTab('timesheets');setSelected(null)}}><FileClock/>Timesheets</button><button className={tab==='expenses'?'active':''} onClick={()=>{setTab('expenses');setSelected(null)}}><Receipt/>Expenses</button><button className={tab==='mileage'?'active':''} onClick={()=>{setTab('mileage');setSelected(null)}}><MapPin/>Mileage</button></div><button className="btn" onClick={exportPayroll}><Download/>Export payroll CSV</button></div>{q.isLoading?<Loading/>:q.error?<DataError message={q.error.message}/>:q.data?.length?<div className="table-card"><table><thead>{tab==='timesheets'?<tr><th>Employee</th><th>Period</th><th>Regular</th><th>Overtime</th><th>Status</th><th></th></tr>:tab==='expenses'?<tr><th>Employee</th><th>Date</th><th>Category</th><th>Description</th><th>Amount</th><th>Status</th><th></th></tr>:<tr><th>Employee</th><th>Date</th><th>Journey</th><th>Miles</th><th>Value</th><th>Status</th><th></th></tr>}</thead><tbody>{tab==='timesheets'?times.data?.map(t=><tr key={t.id} className="clickable" onClick={()=>setSelected(t)}><td><strong>{t.employee?.full_name}</strong></td><td>{new Date(t.period_start).toLocaleDateString('en-GB')} – {new Date(t.period_end).toLocaleDateString('en-GB')}</td><td>{Math.floor(t.regular_minutes/60)}h {t.regular_minutes%60}m</td><td>{Math.floor(t.overtime_minutes/60)}h {t.overtime_minutes%60}m</td><td><Status value={t.status}/></td><td><button className="link-btn">Review</button></td></tr>):tab==='expenses'?expenses.data?.map(x=><tr key={x.id} className="clickable" onClick={()=>setSelected(x)}><td><strong>{x.employee?.full_name}</strong></td><td>{new Date(x.expense_date).toLocaleDateString('en-GB')}</td><td>{x.category}</td><td>{x.description}</td><td><strong>{money(Number(x.amount))}</strong></td><td><Status value={x.status}/></td><td><button className="link-btn">Review</button></td></tr>):mileage.data?.map(x=><tr key={x.id} className="clickable" onClick={()=>setSelected(x)}><td><strong>{x.employee?.full_name}</strong></td><td>{new Date(x.journey_date).toLocaleDateString('en-GB')}</td><td>{x.origin||'—'} → {x.destination||'—'}</td><td>{x.miles}</td><td><strong>{money(Number(x.miles)*Number(x.rate))}</strong></td><td><Status value={x.status}/></td><td><button className="link-btn">Review</button></td></tr>)}</tbody></table></div>:<Empty text={tab==='timesheets'?'No timesheets recorded':tab==='expenses'?'No expenses recorded':'No mileage claims recorded'}/>} {(adding||selected)&&<Modal title={tab==='timesheets'?(selected?'Review timesheet':'Add timesheet'):tab==='expenses'?(selected?'Review expense':'Add expense'):(selected?'Review mileage':'Add mileage')} onClose={close}>{tab==='timesheets'?<TimesheetForm employees={employees.data??[]} record={selected??undefined} onClose={close}/>:tab==='expenses'?<ExpenseForm employees={employees.data??[]} record={selected??undefined} onClose={close}/>:<MileageForm employees={employees.data??[]} record={selected??undefined} onClose={close}/>}</Modal>}</>
+function MileageForm({
+  employees,
+  record,
+  onClose,
+}: {
+  employees: Row[];
+  record?: Row | undefined;
+  onClose: () => void;
+}) {
+  const create = useCreateRow("mileage_claims");
+  const update = useUpdateRow("mileage_claims");
+  const mutation = record ? update : create;
+  async function submit(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    const values = Object.fromEntries(new FormData(e.currentTarget));
+    await mutation.mutateAsync(record ? { id: record.id, ...values } : values);
+    onClose();
+  }
+  return (
+    <form className="form-grid" onSubmit={submit}>
+      <Field label="Employee">
+        <select
+          name="employee_id"
+          defaultValue={record?.employee_id ?? ""}
+          disabled={Boolean(record)}
+          required
+        >
+          <option value="" disabled>
+            Select employee
+          </option>
+          {employees.map((x) => (
+            <option key={x.id} value={x.id}>
+              {x.full_name}
+            </option>
+          ))}
+        </select>
+      </Field>
+      <Field label="Journey date">
+        <input
+          name="journey_date"
+          type="date"
+          defaultValue={
+            record?.journey_date ?? new Date().toISOString().slice(0, 10)
+          }
+          required
+        />
+      </Field>
+      <Field label="Origin">
+        <input name="origin" defaultValue={record?.origin ?? ""} />
+      </Field>
+      <Field label="Destination">
+        <input name="destination" defaultValue={record?.destination ?? ""} />
+      </Field>
+      <Field label="Miles">
+        <input
+          name="miles"
+          type="number"
+          min="0"
+          step="0.1"
+          defaultValue={record?.miles ?? 0}
+          required
+        />
+      </Field>
+      <Field label="Rate per mile">
+        <input
+          name="rate"
+          type="number"
+          min="0"
+          step="0.0001"
+          defaultValue={record?.rate ?? 0.45}
+          required
+        />
+      </Field>
+      <Field label="Purpose">
+        <textarea name="purpose" defaultValue={record?.purpose ?? ""} />
+      </Field>
+      <Field label="Status">
+        <select name="status" defaultValue={record?.status ?? "submitted"}>
+          <option value="draft">Draft</option>
+          <option value="submitted">Submitted</option>
+          <option value="approved">Approved</option>
+          <option value="rejected">Rejected</option>
+          <option value="paid">Paid</option>
+        </select>
+      </Field>
+      {mutation.error && <p className="form-error">{mutation.error.message}</p>}
+      <div className="form-actions">
+        <button type="button" className="btn" onClick={onClose}>
+          Cancel
+        </button>
+        <button className="btn primary" disabled={mutation.isPending}>
+          Save mileage
+        </button>
+      </div>
+    </form>
+  );
 }
 
-function InvoiceForm({people,record,items,onClose}:{people:Row[];record?:Row|undefined;items:Row[];onClose:()=>void}){
- const create=useCreateRow('invoices');const update=useUpdateRow('invoices');const createItem=useCreateRow('invoice_items');const updateItem=useUpdateRow('invoice_items');const mutation=record?update:create;const ownItems=record?items.filter(x=>x.invoice_id===record.id):[];
- async function submit(e:React.FormEvent<HTMLFormElement>){e.preventDefault();const values=Object.fromEntries(new FormData(e.currentTarget));const {item_description,item_quantity,item_unit_price,...invoice}=values;const saved=await mutation.mutateAsync(record?{id:record.id,...invoice}:{...invoice,subtotal:0});if(item_description)await createItem.mutateAsync({invoice_id:record?.id??saved.id,description:item_description,quantity:item_quantity||1,unit_price:item_unit_price||0});onClose()}
- async function saveItem(e:React.FormEvent<HTMLFormElement>,id:string){e.preventDefault();await updateItem.mutateAsync({id,...Object.fromEntries(new FormData(e.currentTarget))})}
- return <><form className="form-grid" onSubmit={submit}><Field label="Invoice number"><input name="invoice_number" defaultValue={record?.invoice_number??`CF-${new Date().getFullYear()}-${Date.now().toString().slice(-6)}`} required/></Field><Field label="Bill to"><select name="service_user_id" defaultValue={record?.service_user_id??''}><option value="">Commissioner / organisation</option>{people.map(x=><option key={x.id} value={x.id}>{x.full_name}</option>)}</select></Field><Field label="Period start"><input name="period_start" type="date" defaultValue={record?.period_start??''}/></Field><Field label="Period end"><input name="period_end" type="date" defaultValue={record?.period_end??''}/></Field><Field label="Issue date"><input name="issue_date" type="date" defaultValue={record?.issue_date??new Date().toISOString().slice(0,10)} required/></Field><Field label="Due date"><input name="due_date" type="date" defaultValue={record?.due_date??''}/></Field><Field label="Tax"><input name="tax" type="number" min="0" step="0.01" defaultValue={record?.tax??0} required/></Field><Field label="Status"><select name="status" defaultValue={record?.status??'draft'}><option value="draft">Draft</option><option value="issued">Issued</option><option value="part_paid">Part paid</option><option value="paid">Paid</option><option value="void">Void</option></select></Field><Field label={record?'Add line description':'First line description'}><input name="item_description"/></Field><Field label="Quantity"><input name="item_quantity" type="number" min="0" step="0.01" defaultValue="1"/></Field><Field label="Unit price"><input name="item_unit_price" type="number" min="0" step="0.01" defaultValue="0"/></Field><Field label="Notes"><textarea name="notes" defaultValue={record?.notes??''}/></Field>{(mutation.error||createItem.error)&&<p className="form-error">{(mutation.error||createItem.error)?.message}</p>}<div className="form-actions"><button type="button" className="btn" onClick={onClose}>Cancel</button><button className="btn primary" disabled={mutation.isPending||createItem.isPending}>Save invoice</button></div></form>{record&&<section className="invoice-lines"><header><h3>Invoice lines</h3><strong>{money(ownItems.reduce((sum,x)=>sum+Number(x.line_total),0))}</strong></header>{ownItems.length?ownItems.map(item=><form key={item.id} onSubmit={e=>void saveItem(e,item.id)}><input name="description" defaultValue={item.description} aria-label="Description"/><input name="quantity" type="number" min="0" step="0.01" defaultValue={item.quantity} aria-label="Quantity"/><input name="unit_price" type="number" min="0" step="0.01" defaultValue={item.unit_price} aria-label="Unit price"/><strong>{money(Number(item.line_total))}</strong><button className="btn small">Save</button></form>):<Empty text="No invoice lines"/>}{updateItem.error&&<p className="form-error">{updateItem.error.message}</p>}</section>}</>
+export function WorkforcePage() {
+  const [tab, setTab] = useState<"timesheets" | "expenses" | "mileage">(
+    "timesheets",
+  );
+  const [adding, setAdding] = useState(false);
+  const [selected, setSelected] = useState<Row | null>(null);
+  const times = useRows("timesheets", "period_end", false);
+  const expenses = useRows("expenses", "expense_date", false);
+  const mileage = useRows("mileage_claims", "journey_date", false);
+  const employees = useRows("employees", "full_name", true);
+  const q =
+    tab === "timesheets" ? times : tab === "expenses" ? expenses : mileage;
+  const close = () => {
+    setAdding(false);
+    setSelected(null);
+  };
+  function exportPayroll() {
+    downloadCsv(
+      `careflow-payroll-${new Date().toISOString().slice(0, 10)}.csv`,
+      [
+        "Employee",
+        "Period start",
+        "Period end",
+        "Regular minutes",
+        "Overtime minutes",
+        "Status",
+      ],
+      (times.data ?? []).map((t) => [
+        t.employee?.full_name,
+        t.period_start,
+        t.period_end,
+        t.regular_minutes,
+        t.overtime_minutes,
+        t.status,
+      ]),
+    );
+  }
+  return (
+    <>
+      <PageHeader
+        title="Workforce"
+        description="Timesheets, expenses and mileage ready for review and payroll."
+        action={
+          tab === "timesheets"
+            ? "Add timesheet"
+            : tab === "expenses"
+              ? "Add expense"
+              : "Add mileage"
+        }
+        onAction={() => setAdding(true)}
+      />
+      <div className="toolbar">
+        <div className="tabs">
+          <button
+            className={tab === "timesheets" ? "active" : ""}
+            onClick={() => {
+              setTab("timesheets");
+              setSelected(null);
+            }}
+          >
+            <FileClock />
+            Timesheets
+          </button>
+          <button
+            className={tab === "expenses" ? "active" : ""}
+            onClick={() => {
+              setTab("expenses");
+              setSelected(null);
+            }}
+          >
+            <Receipt />
+            Expenses
+          </button>
+          <button
+            className={tab === "mileage" ? "active" : ""}
+            onClick={() => {
+              setTab("mileage");
+              setSelected(null);
+            }}
+          >
+            <MapPin />
+            Mileage
+          </button>
+        </div>
+        <button className="btn" onClick={exportPayroll}>
+          <Download />
+          Export payroll CSV
+        </button>
+      </div>
+      {q.isLoading ? (
+        <Loading />
+      ) : q.error ? (
+        <DataError message={q.error.message} />
+      ) : q.data?.length ? (
+        <div className="table-card">
+          <table>
+            <thead>
+              {tab === "timesheets" ? (
+                <tr>
+                  <th>Employee</th>
+                  <th>Period</th>
+                  <th>Regular</th>
+                  <th>Overtime</th>
+                  <th>Status</th>
+                  <th></th>
+                </tr>
+              ) : tab === "expenses" ? (
+                <tr>
+                  <th>Employee</th>
+                  <th>Date</th>
+                  <th>Category</th>
+                  <th>Description</th>
+                  <th>Amount</th>
+                  <th>Status</th>
+                  <th></th>
+                </tr>
+              ) : (
+                <tr>
+                  <th>Employee</th>
+                  <th>Date</th>
+                  <th>Journey</th>
+                  <th>Miles</th>
+                  <th>Value</th>
+                  <th>Status</th>
+                  <th></th>
+                </tr>
+              )}
+            </thead>
+            <tbody>
+              {tab === "timesheets"
+                ? times.data?.map((t) => (
+                    <tr
+                      key={t.id}
+                      className="clickable"
+                      onClick={() => setSelected(t)}
+                    >
+                      <td>
+                        <strong>{t.employee?.full_name}</strong>
+                      </td>
+                      <td>
+                        {new Date(t.period_start).toLocaleDateString("en-GB")} –{" "}
+                        {new Date(t.period_end).toLocaleDateString("en-GB")}
+                      </td>
+                      <td>
+                        {Math.floor(t.regular_minutes / 60)}h{" "}
+                        {t.regular_minutes % 60}m
+                      </td>
+                      <td>
+                        {Math.floor(t.overtime_minutes / 60)}h{" "}
+                        {t.overtime_minutes % 60}m
+                      </td>
+                      <td>
+                        <Status value={t.status} />
+                      </td>
+                      <td>
+                        <button className="link-btn">Review</button>
+                      </td>
+                    </tr>
+                  ))
+                : tab === "expenses"
+                  ? expenses.data?.map((x) => (
+                      <tr
+                        key={x.id}
+                        className="clickable"
+                        onClick={() => setSelected(x)}
+                      >
+                        <td>
+                          <strong>{x.employee?.full_name}</strong>
+                        </td>
+                        <td>
+                          {new Date(x.expense_date).toLocaleDateString("en-GB")}
+                        </td>
+                        <td>{x.category}</td>
+                        <td>{x.description}</td>
+                        <td>
+                          <strong>{money(Number(x.amount))}</strong>
+                        </td>
+                        <td>
+                          <Status value={x.status} />
+                        </td>
+                        <td>
+                          <button className="link-btn">Review</button>
+                        </td>
+                      </tr>
+                    ))
+                  : mileage.data?.map((x) => (
+                      <tr
+                        key={x.id}
+                        className="clickable"
+                        onClick={() => setSelected(x)}
+                      >
+                        <td>
+                          <strong>{x.employee?.full_name}</strong>
+                        </td>
+                        <td>
+                          {new Date(x.journey_date).toLocaleDateString("en-GB")}
+                        </td>
+                        <td>
+                          {x.origin || "—"} → {x.destination || "—"}
+                        </td>
+                        <td>{x.miles}</td>
+                        <td>
+                          <strong>
+                            {money(Number(x.miles) * Number(x.rate))}
+                          </strong>
+                        </td>
+                        <td>
+                          <Status value={x.status} />
+                        </td>
+                        <td>
+                          <button className="link-btn">Review</button>
+                        </td>
+                      </tr>
+                    ))}
+            </tbody>
+          </table>
+        </div>
+      ) : (
+        <Empty
+          text={
+            tab === "timesheets"
+              ? "No timesheets recorded"
+              : tab === "expenses"
+                ? "No expenses recorded"
+                : "No mileage claims recorded"
+          }
+        />
+      )}{" "}
+      {(adding || selected) && (
+        <Modal
+          title={
+            tab === "timesheets"
+              ? selected
+                ? "Review timesheet"
+                : "Add timesheet"
+              : tab === "expenses"
+                ? selected
+                  ? "Review expense"
+                  : "Add expense"
+                : selected
+                  ? "Review mileage"
+                  : "Add mileage"
+          }
+          onClose={close}
+        >
+          {tab === "timesheets" ? (
+            <TimesheetForm
+              employees={employees.data ?? []}
+              record={selected ?? undefined}
+              onClose={close}
+            />
+          ) : tab === "expenses" ? (
+            <ExpenseForm
+              employees={employees.data ?? []}
+              record={selected ?? undefined}
+              onClose={close}
+            />
+          ) : (
+            <MileageForm
+              employees={employees.data ?? []}
+              record={selected ?? undefined}
+              onClose={close}
+            />
+          )}
+        </Modal>
+      )}
+    </>
+  );
 }
 
-export function FinancePage(){
- const invoices=useRows('invoices','issue_date',false);const items=useRows('invoice_items','description',true);const people=useRows('service_users','full_name',true);const [adding,setAdding]=useState(false);const [selected,setSelected]=useState<Row|null>(null);const total=(invoices.data??[]).reduce((s,i)=>s+Number(i.total),0);const close=()=>{setAdding(false);setSelected(null)};
- return <><PageHeader title="Finance" description="Care charges, invoicing and payment tracking." action="Create invoice" onAction={()=>setAdding(true)}/><section className="finance-stats"><article><span><CirclePoundSterling/></span><div><small>Total invoiced</small><strong>{money(total)}</strong></div></article><article><span><Banknote/></span><div><small>Outstanding</small><strong>{money((invoices.data??[]).filter(i=>!['paid','void'].includes(i.status)).reduce((s,i)=>s+Number(i.total),0))}</strong></div></article><article><span><CheckCircle2/></span><div><small>Paid</small><strong>{money((invoices.data??[]).filter(i=>i.status==='paid').reduce((s,i)=>s+Number(i.total),0))}</strong></div></article></section>{invoices.isLoading?<Loading/>:invoices.error?<DataError message={invoices.error.message}/>:invoices.data?.length?<div className="table-card"><table><thead><tr><th>Invoice</th><th>Bill to</th><th>Issue date</th><th>Due</th><th>Total</th><th>Status</th><th></th></tr></thead><tbody>{invoices.data.map(i=><tr key={i.id} className="clickable" onClick={()=>setSelected(i)}><td><strong>{i.invoice_number}</strong></td><td>{i.service_user?.full_name||'Commissioner'}</td><td>{new Date(i.issue_date).toLocaleDateString('en-GB')}</td><td>{i.due_date?new Date(i.due_date).toLocaleDateString('en-GB'):'—'}</td><td><strong>{money(Number(i.total))}</strong></td><td><Status value={i.status}/></td><td><button className="link-btn"><FileText/>View</button></td></tr>)}</tbody></table></div>:<Empty text="No invoices created"/>}{(adding||selected)&&<Modal title={selected?`Invoice ${selected.invoice_number}`:'Create invoice'} onClose={close}><InvoiceForm people={people.data??[]} items={items.data??[]} record={selected??undefined} onClose={close}/></Modal>}</>
+function InvoiceForm({
+  people,
+  record,
+  items,
+  onClose,
+}: {
+  people: Row[];
+  record?: Row | undefined;
+  items: Row[];
+  onClose: () => void;
+}) {
+  const create = useCreateRow("invoices");
+  const update = useUpdateRow("invoices");
+  const createItem = useCreateRow("invoice_items");
+  const updateItem = useUpdateRow("invoice_items");
+  const mutation = record ? update : create;
+  const ownItems = record
+    ? items.filter((x) => x.invoice_id === record.id)
+    : [];
+  async function submit(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    const values = Object.fromEntries(new FormData(e.currentTarget));
+    const { item_description, item_quantity, item_unit_price, ...invoice } =
+      values;
+    const saved = await mutation.mutateAsync(
+      record ? { id: record.id, ...invoice } : { ...invoice, subtotal: 0 },
+    );
+    if (item_description)
+      await createItem.mutateAsync({
+        invoice_id: record?.id ?? saved.id,
+        description: item_description,
+        quantity: item_quantity || 1,
+        unit_price: item_unit_price || 0,
+      });
+    onClose();
+  }
+  async function saveItem(e: React.FormEvent<HTMLFormElement>, id: string) {
+    e.preventDefault();
+    await updateItem.mutateAsync({
+      id,
+      ...Object.fromEntries(new FormData(e.currentTarget)),
+    });
+  }
+  return (
+    <>
+      <form className="form-grid" onSubmit={submit}>
+        <Field label="Invoice number">
+          <input
+            name="invoice_number"
+            defaultValue={
+              record?.invoice_number ??
+              `CF-${new Date().getFullYear()}-${Date.now().toString().slice(-6)}`
+            }
+            required
+          />
+        </Field>
+        <Field label="Bill to">
+          <select
+            name="service_user_id"
+            defaultValue={record?.service_user_id ?? ""}
+          >
+            <option value="">Commissioner / organisation</option>
+            {people.map((x) => (
+              <option key={x.id} value={x.id}>
+                {x.full_name}
+              </option>
+            ))}
+          </select>
+        </Field>
+        <Field label="Period start">
+          <input
+            name="period_start"
+            type="date"
+            defaultValue={record?.period_start ?? ""}
+          />
+        </Field>
+        <Field label="Period end">
+          <input
+            name="period_end"
+            type="date"
+            defaultValue={record?.period_end ?? ""}
+          />
+        </Field>
+        <Field label="Issue date">
+          <input
+            name="issue_date"
+            type="date"
+            defaultValue={
+              record?.issue_date ?? new Date().toISOString().slice(0, 10)
+            }
+            required
+          />
+        </Field>
+        <Field label="Due date">
+          <input
+            name="due_date"
+            type="date"
+            defaultValue={record?.due_date ?? ""}
+          />
+        </Field>
+        <Field label="Tax">
+          <input
+            name="tax"
+            type="number"
+            min="0"
+            step="0.01"
+            defaultValue={record?.tax ?? 0}
+            required
+          />
+        </Field>
+        <Field label="Status">
+          <select name="status" defaultValue={record?.status ?? "draft"}>
+            <option value="draft">Draft</option>
+            <option value="issued">Issued</option>
+            <option value="part_paid">Part paid</option>
+            <option value="paid">Paid</option>
+            <option value="void">Void</option>
+          </select>
+        </Field>
+        <Field
+          label={record ? "Add line description" : "First line description"}
+        >
+          <input name="item_description" />
+        </Field>
+        <Field label="Quantity">
+          <input
+            name="item_quantity"
+            type="number"
+            min="0"
+            step="0.01"
+            defaultValue="1"
+          />
+        </Field>
+        <Field label="Unit price">
+          <input
+            name="item_unit_price"
+            type="number"
+            min="0"
+            step="0.01"
+            defaultValue="0"
+          />
+        </Field>
+        <Field label="Notes">
+          <textarea name="notes" defaultValue={record?.notes ?? ""} />
+        </Field>
+        {(mutation.error || createItem.error) && (
+          <p className="form-error">
+            {(mutation.error || createItem.error)?.message}
+          </p>
+        )}
+        <div className="form-actions">
+          <button type="button" className="btn" onClick={onClose}>
+            Cancel
+          </button>
+          <button
+            className="btn primary"
+            disabled={mutation.isPending || createItem.isPending}
+          >
+            Save invoice
+          </button>
+        </div>
+      </form>
+      {record && (
+        <section className="invoice-lines">
+          <header>
+            <h3>Invoice lines</h3>
+            <strong>
+              {money(
+                ownItems.reduce((sum, x) => sum + Number(x.line_total), 0),
+              )}
+            </strong>
+          </header>
+          {ownItems.length ? (
+            ownItems.map((item) => (
+              <form key={item.id} onSubmit={(e) => void saveItem(e, item.id)}>
+                <input
+                  name="description"
+                  defaultValue={item.description}
+                  aria-label="Description"
+                />
+                <input
+                  name="quantity"
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  defaultValue={item.quantity}
+                  aria-label="Quantity"
+                />
+                <input
+                  name="unit_price"
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  defaultValue={item.unit_price}
+                  aria-label="Unit price"
+                />
+                <strong>{money(Number(item.line_total))}</strong>
+                <button className="btn small">Save</button>
+              </form>
+            ))
+          ) : (
+            <Empty text="No invoice lines" />
+          )}
+          {updateItem.error && (
+            <p className="form-error">{updateItem.error.message}</p>
+          )}
+        </section>
+      )}
+    </>
+  );
 }
 
-export function ReportsPage(){
- const {activeCompany}=useAuth();const company=activeCompany as unknown as Row|null;const [period,setPeriod]=useState(30);const [person,setPerson]=useState('all');
- const audit=useRows('audit_events','created_at',false);const visits=useRows('visits','starts_at',false);const people=useRows('service_users','full_name',true);const plans=useRows('care_plans','review_due',true);const mar=useRows('mar_entries','scheduled_for',false);const incidents=useRows('incidents','occurred_at',false);const safeguarding=useRows('safeguarding_records','raised_at',false);const actions=useRows('incident_actions','due_at',true);const exportLog=useCreateRow('export_jobs');
- const lateThreshold=Number(company?.late_visit_threshold_minutes??15);const earlyThreshold=Number(company?.early_visit_threshold_minutes??15);const now=Date.now();const from=now-period*86400000;
- const scoped=useMemo(()=>(visits.data??[]).filter(v=>{const start=new Date(v.starts_at).getTime();return start>=from&&start<=now&&(person==='all'||v.service_user_id===person)}),[visits.data,from,now,person]);
- const due=scoped.filter(v=>v.status!=='cancelled');const started=due.filter(v=>v.actual_arrival_at);const completed=due.filter(v=>v.status==='completed');
- const late=started.filter(v=>(new Date(v.actual_arrival_at).getTime()-new Date(v.starts_at).getTime())/60000>lateThreshold);
- const early=started.filter(v=>(new Date(v.starts_at).getTime()-new Date(v.actual_arrival_at).getTime())/60000>earlyThreshold);
- const leftEarly=completed.filter(v=>v.actual_departure_at&&(new Date(v.ends_at).getTime()-new Date(v.actual_departure_at).getTime())/60000>earlyThreshold);
- const missed=due.filter(v=>v.status==='missed'||(v.status==='scheduled'&&!v.actual_arrival_at&&new Date(v.ends_at).getTime()<now));
- const understaffed=scoped.filter(v=>(v.assignments?.length??(v.employee_id?1:0))<Number(v.required_carers??1));
- const periodIncidents=(incidents.data??[]).filter(i=>new Date(i.occurred_at).getTime()>=from&&(person==='all'||i.service_user_id===person));const periodSafeguarding=(safeguarding.data??[]).filter(i=>new Date(i.raised_at).getTime()>=from&&(person==='all'||i.service_user_id===person));const openActions=(actions.data??[]).filter(a=>a.status!=='completed');
- const plannedMinutes=due.reduce((sum,v)=>sum+(new Date(v.ends_at).getTime()-new Date(v.starts_at).getTime())/60000,0);const deliveredMinutes=completed.reduce((sum,v)=>sum+(v.actual_arrival_at&&v.actual_departure_at?(new Date(v.actual_departure_at).getTime()-new Date(v.actual_arrival_at).getTime())/60000:0),0);const pct=(value:number,total:number)=>total?`${Math.round(value/total*100)}%`:'—';
- const exceptions=([...late.map(v=>({...v,exception:'Late start',variance:Math.round((new Date(v.actual_arrival_at).getTime()-new Date(v.starts_at).getTime())/60000)})),...early.map(v=>({...v,exception:'Early start',variance:Math.round((new Date(v.starts_at).getTime()-new Date(v.actual_arrival_at).getTime())/60000)})),...leftEarly.map(v=>({...v,exception:'Visit ended early',variance:Math.round((new Date(v.ends_at).getTime()-new Date(v.actual_departure_at).getTime())/60000)})),...missed.map(v=>({...v,exception:'Missed / overdue',variance:null})),...understaffed.map(v=>({...v,exception:'Under-allocated',variance:null}))] as (Row&{exception:string;variance:number|null})[]).sort((a,b)=>new Date(b.starts_at).getTime()-new Date(a.starts_at).getTime());
- const runExport=(type:string,download:()=>void)=>{exportLog.mutate({export_type:type,status:'ready',filters:{delivery:'browser_csv',period_days:period,service_user_id:person}});download()};
- function exportInspection(){runExport('inspection_performance',()=>downloadCsv(`careflow-inspection-performance-${new Date().toISOString().slice(0,10)}.csv`,['Exception','Person','Visit','Scheduled start','Scheduled end','Actual arrival','Actual departure','Variance minutes','Status','Carers required','Carers allocated'],exceptions.map(v=>[v.exception,v.service_user?.full_name,v.visit_type,v.starts_at,v.ends_at,v.actual_arrival_at,v.actual_departure_at,v.variance,v.status,v.required_carers??1,v.assignments?.length??(v.employee_id?1:0)])))}
- const cards=[{title:'Completion rate',value:pct(completed.length,due.length),desc:`${completed.length} of ${due.length} due visits completed`,Icon:CheckCircle2},{title:'On-time starts',value:pct(started.length-late.length-early.length,started.length),desc:`Within −${earlyThreshold}/+${lateThreshold} minute tolerance`,Icon:Gauge},{title:'Late starts',value:String(late.length),desc:`More than ${lateThreshold} minutes late`,Icon:History},{title:'Missed / overdue',value:String(missed.length),desc:'Marked missed or ended without arrival',Icon:ShieldCheck},{title:'Early starts',value:String(early.length),desc:`More than ${earlyThreshold} minutes early`,Icon:FileClock},{title:'Visits ended early',value:String(leftEarly.length),desc:`Departed over ${earlyThreshold} minutes before plan`,Icon:FileClock},{title:'Under-allocated',value:String(understaffed.length),desc:'Required carer places not filled',Icon:UsersRound},{title:'Incidents',value:String(periodIncidents.length),desc:`${periodIncidents.filter(i=>i.status!=='closed').length} remain open`,Icon:Receipt},{title:'Safeguarding',value:String(periodSafeguarding.length),desc:`${periodSafeguarding.filter(i=>i.status!=='closed').length} remain open`,Icon:ShieldCheck}];
- if(visits.isLoading)return <Loading/>;if(visits.error)return <DataError message={visits.error.message}/>;
- return <><PageHeader title="Care performance & inspection" description="Auditable operational performance calculated from scheduled and actual care delivery records."/><div className="inspection-toolbar"><div><Field label="Reporting period"><select value={period} onChange={e=>setPeriod(Number(e.target.value))}><option value="7">Last 7 days</option><option value="30">Last 30 days</option><option value="90">Last 90 days</option></select></Field><Field label="Person supported"><select value={person} onChange={e=>setPerson(e.target.value)}><option value="all">All people</option>{people.data?.map(p=><option key={p.id} value={p.id}>{p.full_name}</option>)}</select></Field></div><button className="btn primary" onClick={exportInspection}><Download/>Export inspection evidence</button></div><div className="inspection-definitions"><strong>Reporting definitions</strong><span>Late: arrival &gt; {lateThreshold} min after scheduled start</span><span>Early: arrival &gt; {earlyThreshold} min before scheduled start</span><span>Ended early: departure &gt; {earlyThreshold} min before scheduled end</span><span>Missed/overdue: marked missed, or scheduled end passed with no arrival</span></div><div className="performance-grid">{cards.map(({title,value,desc,Icon})=><article key={title}><span><Icon/></span><div><small>{title}</small><strong>{value}</strong><p>{desc}</p></div></article>)}</div><section className="delivery-summary"><article><small>Planned care</small><strong>{Math.round(plannedMinutes/60*10)/10} hours</strong></article><article><small>Recorded delivery</small><strong>{Math.round(deliveredMinutes/60*10)/10} hours</strong></article><article><small>Open incident actions</small><strong>{openActions.length}</strong></article><article><small>Care plans due / overdue</small><strong>{(plans.data??[]).filter(p=>p.review_due&&new Date(p.review_due).getTime()<=now).length}</strong></article><article><small>MAR exceptions</small><strong>{(mar.data??[]).filter(x=>x.outcome!=='given'&&new Date(x.scheduled_for).getTime()>=from).length}</strong></article></section><section className="panel inspection-table"><header><div><h2>Visit exceptions and evidence</h2><p>Each row is calculated directly from scheduled and actual timestamps.</p></div><strong>{exceptions.length} records</strong></header>{exceptions.length?<div className="table-card"><table><thead><tr><th>Exception</th><th>Person / visit</th><th>Scheduled</th><th>Actual delivery</th><th>Variance</th><th>Status</th></tr></thead><tbody>{exceptions.map((v,index)=><tr key={`${v.id}-${v.exception}-${index}`}><td><strong>{v.exception}</strong></td><td><strong>{v.service_user?.full_name}</strong><small>{v.visit_type}</small></td><td>{new Date(v.starts_at).toLocaleString('en-GB')}<small>to {new Date(v.ends_at).toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'})}</small></td><td>{v.actual_arrival_at?new Date(v.actual_arrival_at).toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'}):'No arrival'}<small>{v.actual_departure_at?`Left ${new Date(v.actual_departure_at).toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'})}`:'No departure'}</small></td><td>{v.variance!=null?`${v.variance} min`:'—'}</td><td><Status value={v.status}/></td></tr>)}</tbody></table></div>:<Empty text="No visit exceptions in this reporting period"/>}</section><section className="panel audit-panel"><header><div><h2>Audit activity</h2><p>Append-only record of important system changes</p></div><button className="btn" onClick={()=>runExport('audit',()=>downloadCsv('careflow-audit.csv',['Date/time','Action','Entity type','Entity ID'],(audit.data??[]).map(a=>[a.created_at,a.action,a.entity_type,a.entity_id])))}><Download/>Export CSV</button></header>{exportLog.error&&<p className="form-error">{exportLog.error.message}</p>}{audit.isLoading?<Loading/>:audit.error?<DataError message={audit.error.message}/>:audit.data?.length?<div className="compact-list">{audit.data.slice(0,30).map(a=><article key={a.id}><span className="attention-icon blue"><History/></span><div><strong>{a.action.replaceAll('_',' ')} · {a.entity_type.replaceAll('_',' ')}</strong><small>{new Date(a.created_at).toLocaleString('en-GB')}</small></div><Status value="recorded"/></article>)}</div>:<Empty text="No audit activity recorded"/>}</section></>
+export function FinancePage() {
+  const invoices = useRows("invoices", "issue_date", false);
+  const items = useRows("invoice_items", "description", true);
+  const people = useRows("service_users", "full_name", true);
+  const [adding, setAdding] = useState(false);
+  const [selected, setSelected] = useState<Row | null>(null);
+  const total = (invoices.data ?? []).reduce((s, i) => s + Number(i.total), 0);
+  const close = () => {
+    setAdding(false);
+    setSelected(null);
+  };
+  return (
+    <>
+      <PageHeader
+        title="Finance"
+        description="Care charges, invoicing and payment tracking."
+        action="Create invoice"
+        onAction={() => setAdding(true)}
+      />
+      <section className="finance-stats">
+        <article>
+          <span>
+            <CirclePoundSterling />
+          </span>
+          <div>
+            <small>Total invoiced</small>
+            <strong>{money(total)}</strong>
+          </div>
+        </article>
+        <article>
+          <span>
+            <Banknote />
+          </span>
+          <div>
+            <small>Outstanding</small>
+            <strong>
+              {money(
+                (invoices.data ?? [])
+                  .filter((i) => !["paid", "void"].includes(i.status))
+                  .reduce((s, i) => s + Number(i.total), 0),
+              )}
+            </strong>
+          </div>
+        </article>
+        <article>
+          <span>
+            <CheckCircle2 />
+          </span>
+          <div>
+            <small>Paid</small>
+            <strong>
+              {money(
+                (invoices.data ?? [])
+                  .filter((i) => i.status === "paid")
+                  .reduce((s, i) => s + Number(i.total), 0),
+              )}
+            </strong>
+          </div>
+        </article>
+      </section>
+      {invoices.isLoading ? (
+        <Loading />
+      ) : invoices.error ? (
+        <DataError message={invoices.error.message} />
+      ) : invoices.data?.length ? (
+        <div className="table-card">
+          <table>
+            <thead>
+              <tr>
+                <th>Invoice</th>
+                <th>Bill to</th>
+                <th>Issue date</th>
+                <th>Due</th>
+                <th>Total</th>
+                <th>Status</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {invoices.data.map((i) => (
+                <tr
+                  key={i.id}
+                  className="clickable"
+                  onClick={() => setSelected(i)}
+                >
+                  <td>
+                    <strong>{i.invoice_number}</strong>
+                  </td>
+                  <td>{i.service_user?.full_name || "Commissioner"}</td>
+                  <td>{new Date(i.issue_date).toLocaleDateString("en-GB")}</td>
+                  <td>
+                    {i.due_date
+                      ? new Date(i.due_date).toLocaleDateString("en-GB")
+                      : "—"}
+                  </td>
+                  <td>
+                    <strong>{money(Number(i.total))}</strong>
+                  </td>
+                  <td>
+                    <Status value={i.status} />
+                  </td>
+                  <td>
+                    <button className="link-btn">
+                      <FileText />
+                      View
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : (
+        <Empty text="No invoices created" />
+      )}
+      {(adding || selected) && (
+        <Modal
+          title={
+            selected ? `Invoice ${selected.invoice_number}` : "Create invoice"
+          }
+          onClose={close}
+        >
+          <InvoiceForm
+            people={people.data ?? []}
+            items={items.data ?? []}
+            record={selected ?? undefined}
+            onClose={close}
+          />
+        </Modal>
+      )}
+    </>
+  );
 }
 
-function OrganisationForm({company,onClose}:{company:Row;onClose:()=>void}){
- const update=useUpdateRow('companies');
- async function submit(e:React.FormEvent<HTMLFormElement>){e.preventDefault();await update.mutateAsync({id:company.id,...Object.fromEntries(new FormData(e.currentTarget))});onClose();location.reload()}
- return <form className="form-grid" onSubmit={submit}><Field label="Legal name"><input name="name" defaultValue={company.name} required/></Field><Field label="Trading name"><input name="trading_name" defaultValue={company.trading_name??''}/></Field><Field label="Registered number"><input name="registered_number" defaultValue={company.registered_number??''}/></Field><Field label="Contact email"><input name="contact_email" type="email" defaultValue={company.contact_email??''}/></Field><Field label="Telephone"><input name="contact_phone" defaultValue={company.contact_phone??''}/></Field><Field label="Timezone"><input name="timezone" defaultValue={company.timezone??'Europe/London'} required/></Field><Field label="Address"><textarea name="address" defaultValue={company.address??''}/></Field><Field label="Late visit tolerance (minutes)"><input name="late_visit_threshold_minutes" type="number" min="0" max="120" defaultValue={company.late_visit_threshold_minutes??15} required/></Field><Field label="Early visit tolerance (minutes)"><input name="early_visit_threshold_minutes" type="number" min="0" max="120" defaultValue={company.early_visit_threshold_minutes??15} required/></Field><Field label="Session timeout (minutes)"><input name="session_timeout_minutes" type="number" min="5" defaultValue={company.session_timeout_minutes??30}/></Field><Field label="Retention (years)"><input name="retention_years" type="number" min="1" defaultValue={company.retention_years??7}/></Field>{update.error&&<p className="form-error">{update.error.message}</p>}<div className="form-actions"><button type="button" className="btn" onClick={onClose}>Cancel</button><button className="btn primary" disabled={update.isPending}>Save organisation</button></div></form>
+export function ReportsPage() {
+  const { activeCompany } = useAuth();
+  const company = activeCompany as unknown as Row | null;
+  const [period, setPeriod] = useState(30);
+  const [person, setPerson] = useState("all");
+  const audit = useRows("audit_events", "created_at", false);
+  const visits = useRows("visits", "starts_at", false);
+  const people = useRows("service_users", "full_name", true);
+  const plans = useRows("care_plans", "review_due", true);
+  const mar = useRows("mar_entries", "scheduled_for", false);
+  const incidents = useRows("incidents", "occurred_at", false);
+  const safeguarding = useRows("safeguarding_records", "raised_at", false);
+  const actions = useRows("incident_actions", "due_at", true);
+  const exportLog = useCreateRow("export_jobs");
+  const lateThreshold = Number(company?.late_visit_threshold_minutes ?? 15);
+  const earlyThreshold = Number(company?.early_visit_threshold_minutes ?? 15);
+  const now = Date.now();
+  const from = now - period * 86400000;
+  const scoped = useMemo(
+    () =>
+      (visits.data ?? []).filter((v) => {
+        const start = new Date(v.starts_at).getTime();
+        return (
+          start >= from &&
+          start <= now &&
+          (person === "all" || v.service_user_id === person)
+        );
+      }),
+    [visits.data, from, now, person],
+  );
+  const due = scoped.filter((v) => v.status !== "cancelled");
+  const started = due.filter((v) => v.actual_arrival_at);
+  const completed = due.filter((v) => v.status === "completed");
+  const late = started.filter(
+    (v) =>
+      (new Date(v.actual_arrival_at).getTime() -
+        new Date(v.starts_at).getTime()) /
+        60000 >
+      lateThreshold,
+  );
+  const early = started.filter(
+    (v) =>
+      (new Date(v.starts_at).getTime() -
+        new Date(v.actual_arrival_at).getTime()) /
+        60000 >
+      earlyThreshold,
+  );
+  const leftEarly = completed.filter(
+    (v) =>
+      v.actual_departure_at &&
+      (new Date(v.ends_at).getTime() -
+        new Date(v.actual_departure_at).getTime()) /
+        60000 >
+        earlyThreshold,
+  );
+  const missed = due.filter(
+    (v) =>
+      v.status === "missed" ||
+      (v.status === "scheduled" &&
+        !v.actual_arrival_at &&
+        new Date(v.ends_at).getTime() < now),
+  );
+  const understaffed = scoped.filter(
+    (v) =>
+      (v.assignments?.length ?? (v.employee_id ? 1 : 0)) <
+      Number(v.required_carers ?? 1),
+  );
+  const periodIncidents = (incidents.data ?? []).filter(
+    (i) =>
+      new Date(i.occurred_at).getTime() >= from &&
+      (person === "all" || i.service_user_id === person),
+  );
+  const periodSafeguarding = (safeguarding.data ?? []).filter(
+    (i) =>
+      new Date(i.raised_at).getTime() >= from &&
+      (person === "all" || i.service_user_id === person),
+  );
+  const openActions = (actions.data ?? []).filter(
+    (a) => a.status !== "completed",
+  );
+  const plannedMinutes = due.reduce(
+    (sum, v) =>
+      sum +
+      (new Date(v.ends_at).getTime() - new Date(v.starts_at).getTime()) / 60000,
+    0,
+  );
+  const deliveredMinutes = completed.reduce(
+    (sum, v) =>
+      sum +
+      (v.actual_arrival_at && v.actual_departure_at
+        ? (new Date(v.actual_departure_at).getTime() -
+            new Date(v.actual_arrival_at).getTime()) /
+          60000
+        : 0),
+    0,
+  );
+  const pct = (value: number, total: number) =>
+    total ? `${Math.round((value / total) * 100)}%` : "—";
+  const exceptions = (
+    [
+      ...late.map((v) => ({
+        ...v,
+        exception: "Late start",
+        variance: Math.round(
+          (new Date(v.actual_arrival_at).getTime() -
+            new Date(v.starts_at).getTime()) /
+            60000,
+        ),
+      })),
+      ...early.map((v) => ({
+        ...v,
+        exception: "Early start",
+        variance: Math.round(
+          (new Date(v.starts_at).getTime() -
+            new Date(v.actual_arrival_at).getTime()) /
+            60000,
+        ),
+      })),
+      ...leftEarly.map((v) => ({
+        ...v,
+        exception: "Visit ended early",
+        variance: Math.round(
+          (new Date(v.ends_at).getTime() -
+            new Date(v.actual_departure_at).getTime()) /
+            60000,
+        ),
+      })),
+      ...missed.map((v) => ({
+        ...v,
+        exception: "Missed / overdue",
+        variance: null,
+      })),
+      ...understaffed.map((v) => ({
+        ...v,
+        exception: "Under-allocated",
+        variance: null,
+      })),
+    ] as (Row & { exception: string; variance: number | null })[]
+  ).sort(
+    (a, b) => new Date(b.starts_at).getTime() - new Date(a.starts_at).getTime(),
+  );
+  const runExport = (type: string, download: () => void) => {
+    exportLog.mutate({
+      export_type: type,
+      status: "ready",
+      filters: {
+        delivery: "browser_csv",
+        period_days: period,
+        service_user_id: person,
+      },
+    });
+    download();
+  };
+  function exportInspection() {
+    runExport("inspection_performance", () =>
+      downloadCsv(
+        `careflow-inspection-performance-${new Date().toISOString().slice(0, 10)}.csv`,
+        [
+          "Exception",
+          "Person",
+          "Visit",
+          "Scheduled start",
+          "Scheduled end",
+          "Actual arrival",
+          "Actual departure",
+          "Variance minutes",
+          "Status",
+          "Carers required",
+          "Carers allocated",
+        ],
+        exceptions.map((v) => [
+          v.exception,
+          v.service_user?.full_name,
+          v.visit_type,
+          v.starts_at,
+          v.ends_at,
+          v.actual_arrival_at,
+          v.actual_departure_at,
+          v.variance,
+          v.status,
+          v.required_carers ?? 1,
+          v.assignments?.length ?? (v.employee_id ? 1 : 0),
+        ]),
+      ),
+    );
+  }
+  const cards = [
+    {
+      title: "Completion rate",
+      value: pct(completed.length, due.length),
+      desc: `${completed.length} of ${due.length} due visits completed`,
+      Icon: CheckCircle2,
+    },
+    {
+      title: "On-time starts",
+      value: pct(started.length - late.length - early.length, started.length),
+      desc: `Within −${earlyThreshold}/+${lateThreshold} minute tolerance`,
+      Icon: Gauge,
+    },
+    {
+      title: "Late starts",
+      value: String(late.length),
+      desc: `More than ${lateThreshold} minutes late`,
+      Icon: History,
+    },
+    {
+      title: "Missed / overdue",
+      value: String(missed.length),
+      desc: "Marked missed or ended without arrival",
+      Icon: ShieldCheck,
+    },
+    {
+      title: "Early starts",
+      value: String(early.length),
+      desc: `More than ${earlyThreshold} minutes early`,
+      Icon: FileClock,
+    },
+    {
+      title: "Visits ended early",
+      value: String(leftEarly.length),
+      desc: `Departed over ${earlyThreshold} minutes before plan`,
+      Icon: FileClock,
+    },
+    {
+      title: "Under-allocated",
+      value: String(understaffed.length),
+      desc: "Required carer places not filled",
+      Icon: UsersRound,
+    },
+    {
+      title: "Incidents",
+      value: String(periodIncidents.length),
+      desc: `${periodIncidents.filter((i) => i.status !== "closed").length} remain open`,
+      Icon: Receipt,
+    },
+    {
+      title: "Safeguarding",
+      value: String(periodSafeguarding.length),
+      desc: `${periodSafeguarding.filter((i) => i.status !== "closed").length} remain open`,
+      Icon: ShieldCheck,
+    },
+  ];
+  if (visits.isLoading) return <Loading />;
+  if (visits.error) return <DataError message={visits.error.message} />;
+  return (
+    <>
+      <PageHeader
+        title="Care performance & inspection"
+        description="Auditable operational performance calculated from scheduled and actual care delivery records."
+      />
+      <div className="inspection-toolbar">
+        <div>
+          <Field label="Reporting period">
+            <select
+              value={period}
+              onChange={(e) => setPeriod(Number(e.target.value))}
+            >
+              <option value="7">Last 7 days</option>
+              <option value="30">Last 30 days</option>
+              <option value="90">Last 90 days</option>
+            </select>
+          </Field>
+          <Field label="Person supported">
+            <select value={person} onChange={(e) => setPerson(e.target.value)}>
+              <option value="all">All people</option>
+              {people.data?.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.full_name}
+                </option>
+              ))}
+            </select>
+          </Field>
+        </div>
+        <button className="btn primary" onClick={exportInspection}>
+          <Download />
+          Export inspection evidence
+        </button>
+      </div>
+      <div className="inspection-definitions">
+        <strong>Reporting definitions</strong>
+        <span>
+          Late: arrival &gt; {lateThreshold} min after scheduled start
+        </span>
+        <span>
+          Early: arrival &gt; {earlyThreshold} min before scheduled start
+        </span>
+        <span>
+          Ended early: departure &gt; {earlyThreshold} min before scheduled end
+        </span>
+        <span>
+          Missed/overdue: marked missed, or scheduled end passed with no arrival
+        </span>
+      </div>
+      <div className="performance-grid">
+        {cards.map(({ title, value, desc, Icon }) => (
+          <article key={title}>
+            <span>
+              <Icon />
+            </span>
+            <div>
+              <small>{title}</small>
+              <strong>{value}</strong>
+              <p>{desc}</p>
+            </div>
+          </article>
+        ))}
+      </div>
+      <section className="delivery-summary">
+        <article>
+          <small>Planned care</small>
+          <strong>{Math.round((plannedMinutes / 60) * 10) / 10} hours</strong>
+        </article>
+        <article>
+          <small>Recorded delivery</small>
+          <strong>{Math.round((deliveredMinutes / 60) * 10) / 10} hours</strong>
+        </article>
+        <article>
+          <small>Open incident actions</small>
+          <strong>{openActions.length}</strong>
+        </article>
+        <article>
+          <small>Care plans due / overdue</small>
+          <strong>
+            {
+              (plans.data ?? []).filter(
+                (p) => p.review_due && new Date(p.review_due).getTime() <= now,
+              ).length
+            }
+          </strong>
+        </article>
+        <article>
+          <small>MAR exceptions</small>
+          <strong>
+            {
+              (mar.data ?? []).filter(
+                (x) =>
+                  x.outcome !== "given" &&
+                  new Date(x.scheduled_for).getTime() >= from,
+              ).length
+            }
+          </strong>
+        </article>
+      </section>
+      <section className="panel inspection-table">
+        <header>
+          <div>
+            <h2>Visit exceptions and evidence</h2>
+            <p>
+              Each row is calculated directly from scheduled and actual
+              timestamps.
+            </p>
+          </div>
+          <strong>{exceptions.length} records</strong>
+        </header>
+        {exceptions.length ? (
+          <div className="table-card">
+            <table>
+              <thead>
+                <tr>
+                  <th>Exception</th>
+                  <th>Person / visit</th>
+                  <th>Scheduled</th>
+                  <th>Actual delivery</th>
+                  <th>Variance</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {exceptions.map((v, index) => (
+                  <tr key={`${v.id}-${v.exception}-${index}`}>
+                    <td>
+                      <strong>{v.exception}</strong>
+                    </td>
+                    <td>
+                      <strong>{v.service_user?.full_name}</strong>
+                      <small>{v.visit_type}</small>
+                    </td>
+                    <td>
+                      {new Date(v.starts_at).toLocaleString("en-GB")}
+                      <small>
+                        to{" "}
+                        {new Date(v.ends_at).toLocaleTimeString("en-GB", {
+                          hour: "2-digit",
+                          minute: "2-digit",
+                        })}
+                      </small>
+                    </td>
+                    <td>
+                      {v.actual_arrival_at
+                        ? new Date(v.actual_arrival_at).toLocaleTimeString(
+                            "en-GB",
+                            { hour: "2-digit", minute: "2-digit" },
+                          )
+                        : "No arrival"}
+                      <small>
+                        {v.actual_departure_at
+                          ? `Left ${new Date(v.actual_departure_at).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })}`
+                          : "No departure"}
+                      </small>
+                    </td>
+                    <td>{v.variance != null ? `${v.variance} min` : "—"}</td>
+                    <td>
+                      <Status value={v.status} />
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <Empty text="No visit exceptions in this reporting period" />
+        )}
+      </section>
+      <section className="panel audit-panel">
+        <header>
+          <div>
+            <h2>Audit activity</h2>
+            <p>Append-only record of important system changes</p>
+          </div>
+          <button
+            className="btn"
+            onClick={() =>
+              runExport("audit", () =>
+                downloadCsv(
+                  "careflow-audit.csv",
+                  ["Date/time", "Action", "Entity type", "Entity ID"],
+                  (audit.data ?? []).map((a) => [
+                    a.created_at,
+                    a.action,
+                    a.entity_type,
+                    a.entity_id,
+                  ]),
+                ),
+              )
+            }
+          >
+            <Download />
+            Export CSV
+          </button>
+        </header>
+        {exportLog.error && (
+          <p className="form-error">{exportLog.error.message}</p>
+        )}
+        {audit.isLoading ? (
+          <Loading />
+        ) : audit.error ? (
+          <DataError message={audit.error.message} />
+        ) : audit.data?.length ? (
+          <div className="compact-list">
+            {audit.data.slice(0, 30).map((a) => (
+              <article key={a.id}>
+                <span className="attention-icon blue">
+                  <History />
+                </span>
+                <div>
+                  <strong>
+                    {a.action.replaceAll("_", " ")} ·{" "}
+                    {a.entity_type.replaceAll("_", " ")}
+                  </strong>
+                  <small>
+                    {new Date(a.created_at).toLocaleString("en-GB")}
+                  </small>
+                </div>
+                <Status value="recorded" />
+              </article>
+            ))}
+          </div>
+        ) : (
+          <Empty text="No audit activity recorded" />
+        )}
+      </section>
+    </>
+  );
 }
 
-function AreaForm({employees,record,onClose}:{employees:Row[];record:Row|undefined;onClose:()=>void}){
- const create=useCreateRow('operational_areas');const update=useUpdateRow('operational_areas');const mutation=record?update:create;
- async function submit(e:React.FormEvent<HTMLFormElement>){e.preventDefault();const values=Object.fromEntries(new FormData(e.currentTarget));await mutation.mutateAsync(record?{id:record.id,...values}:values);onClose()}
- return <form className="form-grid" onSubmit={submit}><Field label="Area name"><input name="name" defaultValue={record?.name??''} placeholder="North Lanarkshire" required autoFocus/></Field><Field label="Area code"><input name="code" defaultValue={record?.code??''} placeholder="NL01" required/></Field><Field label="Office name"><input name="office_name" defaultValue={record?.office_name??''} placeholder="Motherwell office"/></Field><Field label="Area manager"><select name="manager_id" defaultValue={record?.manager_id??''}><option value="">Not assigned</option>{employees.filter(e=>e.status==='active').map(e=><option key={e.id} value={e.id}>{e.full_name}</option>)}</select></Field><Field label="Office telephone"><input name="contact_phone" defaultValue={record?.contact_phone??''}/></Field><Field label="Office email"><input name="contact_email" type="email" defaultValue={record?.contact_email??''}/></Field><Field label="Office address"><textarea name="address" defaultValue={record?.address??''}/></Field><Field label="Status"><select name="status" defaultValue={record?.status??'active'}><option value="active">Active</option><option value="inactive">Inactive</option></select></Field>{mutation.error&&<p className="form-error">{mutation.error.message}</p>}<div className="form-actions"><button type="button" className="btn" onClick={onClose}>Cancel</button><button className="btn primary" disabled={mutation.isPending}>{mutation.isPending?'Saving…':'Save area'}</button></div></form>
+function OrganisationForm({
+  company,
+  onClose,
+}: {
+  company: Row;
+  onClose: () => void;
+}) {
+  const update = useUpdateRow("companies");
+  async function submit(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    await update.mutateAsync({
+      id: company.id,
+      ...Object.fromEntries(new FormData(e.currentTarget)),
+    });
+    onClose();
+    location.reload();
+  }
+  return (
+    <form className="form-grid" onSubmit={submit}>
+      <Field label="Legal name">
+        <input name="name" defaultValue={company.name} required />
+      </Field>
+      <Field label="Trading name">
+        <input name="trading_name" defaultValue={company.trading_name ?? ""} />
+      </Field>
+      <Field label="Registered number">
+        <input
+          name="registered_number"
+          defaultValue={company.registered_number ?? ""}
+        />
+      </Field>
+      <Field label="Contact email">
+        <input
+          name="contact_email"
+          type="email"
+          defaultValue={company.contact_email ?? ""}
+        />
+      </Field>
+      <Field label="Telephone">
+        <input
+          name="contact_phone"
+          defaultValue={company.contact_phone ?? ""}
+        />
+      </Field>
+      <Field label="Timezone">
+        <input
+          name="timezone"
+          defaultValue={company.timezone ?? "Europe/London"}
+          required
+        />
+      </Field>
+      <Field label="Address">
+        <textarea name="address" defaultValue={company.address ?? ""} />
+      </Field>
+      <Field label="Late visit tolerance (minutes)">
+        <input
+          name="late_visit_threshold_minutes"
+          type="number"
+          min="0"
+          max="120"
+          defaultValue={company.late_visit_threshold_minutes ?? 15}
+          required
+        />
+      </Field>
+      <Field label="Early visit tolerance (minutes)">
+        <input
+          name="early_visit_threshold_minutes"
+          type="number"
+          min="0"
+          max="120"
+          defaultValue={company.early_visit_threshold_minutes ?? 15}
+          required
+        />
+      </Field>
+      <Field label="Session timeout (minutes)">
+        <input
+          name="session_timeout_minutes"
+          type="number"
+          min="5"
+          defaultValue={company.session_timeout_minutes ?? 30}
+        />
+      </Field>
+      <Field label="Retention (years)">
+        <input
+          name="retention_years"
+          type="number"
+          min="1"
+          defaultValue={company.retention_years ?? 7}
+        />
+      </Field>
+      {update.error && <p className="form-error">{update.error.message}</p>}
+      <div className="form-actions">
+        <button type="button" className="btn" onClick={onClose}>
+          Cancel
+        </button>
+        <button className="btn primary" disabled={update.isPending}>
+          Save organisation
+        </button>
+      </div>
+    </form>
+  );
 }
 
-export function SettingsPage(){
- const {activeCompany,session}=useAuth();const users=useRows('company_memberships','created_at',false);const areas=useRows('operational_areas','name',true);const employees=useRows('employees','full_name',true);const invitation=useCreateInvitation();const client=useQueryClient();const [section,setSection]=useState<'organisation'|'areas'|'users'|'security'|'preferences'>('organisation');const [invite,setInvite]=useState(false);const [editing,setEditing]=useState(false);const [editingArea,setEditingArea]=useState<Row|null|'new'>(null);const [token,setToken]=useState('');const [member,setMember]=useState<Row|null>(null);
- const membershipMutation=useMutation({mutationFn:async({action,id,role}:{action:'deactivate'|'reactivate'|'role';id:string;role?:string})=>{const fn=action==='deactivate'?'deactivate_membership':action==='reactivate'?'reactivate_membership':'change_membership_role';const args=action==='role'?{target_membership_id:id,new_role_key:role,p_reason:'Updated in CareFlow settings'}:{target_membership_id:id,p_reason:'Updated in CareFlow settings'};const {error}=await supabase.rpc(fn,args);if(error)throw error},onSuccess:()=>{void client.invalidateQueries({queryKey:['company',activeCompany?.id,'company_memberships']});setMember(null)}});
- async function submitInvite(e:React.FormEvent<HTMLFormElement>){e.preventDefault();const form=new FormData(e.currentTarget);const raw=await invitation.mutateAsync({email:String(form.get('email')),role:String(form.get('role'))});setToken(raw)}
- const company=activeCompany as unknown as Row|null;
- return <><PageHeader title="Settings" description="Organisation details, operational areas, users, access and system preferences." action="Invite user" onAction={()=>{setToken('');setInvite(true)}}/><div className="settings-layout"><aside><button className={section==='organisation'?'active':''} onClick={()=>setSection('organisation')}><Building2/>Organisation</button><button className={section==='areas'?'active':''} onClick={()=>setSection('areas')}><MapPin/>Areas & offices</button><button className={section==='users'?'active':''} onClick={()=>setSection('users')}><UsersRound/>Users & roles</button><button className={section==='security'?'active':''} onClick={()=>setSection('security')}><ShieldCheck/>Security</button><button className={section==='preferences'?'active':''} onClick={()=>setSection('preferences')}><Settings2/>Preferences</button></aside><section className="settings-content">{section==='organisation'&&<><h2>Organisation profile</h2><p>Used across reports, exports and communications.</p><div className="org-card"><span>{activeCompany?.name.charAt(0)}</span><div><h3>{activeCompany?.name}</h3><small>Active organisation</small></div><button className="btn" onClick={()=>setEditing(true)}>Edit organisation</button></div><div className="detail-grid"><div><small>Contact email</small><strong><Mail/>{activeCompany?.contact_email||'Not set'}</strong></div><div><small>Telephone</small><strong>{activeCompany?.contact_phone||'Not set'}</strong></div><div><small>Address</small><strong><MapPin/>{activeCompany?.address||'Not set'}</strong></div><div><small>Timezone</small><strong>{activeCompany?.timezone}</strong></div></div></>}{section==='areas'&&<><div className="section-title"><div><h2>Operational areas and offices</h2><p>Assign people, staff, visits and financial reporting to the correct local operation.</p></div><button className="btn primary" onClick={()=>setEditingArea('new')}>Add area</button></div><div className="area-grid">{areas.data?.map(area=><article key={area.id}><header><span>{area.code}</span><Status value={area.status}/></header><h3>{area.name}</h3><p>{area.office_name||'Office name not set'}</p><small><MapPin/>{area.address||'No office address'}</small><small><UsersRound/>{area.manager?.full_name||'No area manager'}</small><button className="btn small" onClick={()=>setEditingArea(area)}>Edit area</button></article>)}</div></>}{section==='users'&&<><h2>Users and access</h2><p>Roles determine capabilities; row-level security remains authoritative.</p><div className="member-list">{users.data?.map(u=><article key={u.id}><span className="avatar">{u.profile?.full_name?.split(' ').map((x:string)=>x[0]).join('').slice(0,2)}</span><div><strong>{u.profile?.full_name||u.profile?.email}</strong><small>{u.profile?.email}</small></div><span>{u.role?.label}</span><Status value={u.status}/><button onClick={()=>setMember(u)} disabled={u.user_id===session?.user.id}>Manage</button></article>)}</div></>}{section==='security'&&<><h2>Security</h2><p>Security controls currently enforced for this organisation.</p><div className="detail-grid settings-cards"><div><small>Database</small><strong>Row Level Security enabled</strong></div><div><small>Area security</small><strong>Supabase area access policies</strong></div><div><small>Session timeout</small><strong>{company?.session_timeout_minutes??30} minutes</strong></div><div><small>Audit</small><strong>Append-only security audit</strong></div></div></>}{section==='preferences'&&<><h2>Preferences</h2><p>Organisation-wide operational defaults.</p><div className="detail-grid settings-cards"><div><small>Timezone</small><strong>{activeCompany?.timezone}</strong></div><div><small>Retention</small><strong>{company?.retention_years??7} years</strong></div></div><button className="btn primary settings-edit" onClick={()=>setEditing(true)}>Edit preferences</button></>}</section></div>{editing&&company&&<Modal title="Edit organisation" onClose={()=>setEditing(false)}><OrganisationForm company={company} onClose={()=>setEditing(false)}/></Modal>}{editingArea&&<Modal title={editingArea==='new'?'Add operational area':`Edit ${editingArea.name}`} onClose={()=>setEditingArea(null)}><AreaForm employees={employees.data??[]} record={editingArea==='new'?undefined:editingArea} onClose={()=>setEditingArea(null)}/></Modal>}{member&&<Modal title={`Manage ${member.profile?.full_name||member.profile?.email}`} onClose={()=>setMember(null)}><div className="form-grid"><Field label="Role"><select id="member-role" defaultValue={member.role?.key}><option value="company_admin">Company Administrator</option><option value="manager">Manager</option><option value="coordinator">Coordinator</option><option value="carer">Carer</option><option value="finance">Finance</option></select></Field>{membershipMutation.error&&<p className="form-error">{membershipMutation.error.message}</p>}<div className="form-actions"><button className="btn" onClick={()=>setMember(null)}>Cancel</button><button className="btn" onClick={()=>void membershipMutation.mutate({action:member.status==='active'?'deactivate':'reactivate',id:member.id})}>{member.status==='active'?'Deactivate':'Reactivate'}</button><button className="btn primary" onClick={()=>void membershipMutation.mutate({action:'role',id:member.id,role:(document.getElementById('member-role') as HTMLSelectElement).value})}>Change role</button></div></div></Modal>}{invite&&<Modal title="Invite a user" onClose={()=>setInvite(false)}>{token?<div className="form-grid"><p className="notice">Invitation created. Send this one-time code through an approved secure channel. It is shown only once.</p><Field label="One-time code"><input readOnly value={token}/></Field><div className="form-actions"><button className="btn primary" onClick={()=>void navigator.clipboard.writeText(token)}>Copy code</button><button className="btn" onClick={()=>setInvite(false)}>Done</button></div></div>:<form className="form-grid" onSubmit={submitInvite}><Field label="Email address"><input name="email" type="email" required autoFocus/></Field><Field label="Role"><select name="role" defaultValue="carer"><option value="company_admin">Company Administrator</option><option value="manager">Manager</option><option value="coordinator">Coordinator</option><option value="carer">Carer</option><option value="finance">Finance</option></select></Field>{invitation.error&&<p className="form-error">{invitation.error.message}</p>}<div className="form-actions"><button type="button" className="btn" onClick={()=>setInvite(false)}>Cancel</button><button className="btn primary" disabled={invitation.isPending}>{invitation.isPending?'Creating…':'Create invitation'}</button></div></form>}</Modal>}</>
+function AreaForm({
+  employees,
+  record,
+  onClose,
+}: {
+  employees: Row[];
+  record: Row | undefined;
+  onClose: () => void;
+}) {
+  const mutation = useSaveOperationalArea();
+  async function submit(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    const values = Object.fromEntries(new FormData(e.currentTarget));
+    await mutation.mutateAsync(record ? { id: record.id, ...values } : values);
+    onClose();
+  }
+  return (
+    <form className="form-grid" onSubmit={submit}>
+      <Field label="Area name">
+        <input
+          name="name"
+          defaultValue={record?.name ?? ""}
+          placeholder="North Lanarkshire"
+          required
+          autoFocus
+        />
+      </Field>
+      <Field label="Area code">
+        <input
+          name="code"
+          defaultValue={record?.code ?? ""}
+          placeholder="Generated automatically if left blank"
+          maxLength={20}
+        />
+      </Field>
+      <Field label="Office name">
+        <input
+          name="office_name"
+          defaultValue={record?.office_name ?? ""}
+          placeholder="Motherwell office"
+        />
+      </Field>
+      <Field label="Area manager">
+        <select name="manager_id" defaultValue={record?.manager_id ?? ""}>
+          <option value="">Not assigned</option>
+          {employees
+            .filter((e) => e.status === "active")
+            .map((e) => (
+              <option key={e.id} value={e.id}>
+                {e.full_name}
+              </option>
+            ))}
+        </select>
+      </Field>
+      {!employees.some((employee) => employee.status === "active") && (
+        <p className="notice">
+          Create the area first, then add employees and return here to appoint
+          its manager.
+        </p>
+      )}
+      <Field label="Office telephone">
+        <input
+          name="contact_phone"
+          defaultValue={record?.contact_phone ?? ""}
+        />
+      </Field>
+      <Field label="Office email">
+        <input
+          name="contact_email"
+          type="email"
+          defaultValue={record?.contact_email ?? ""}
+        />
+      </Field>
+      <Field label="Office address">
+        <textarea name="address" defaultValue={record?.address ?? ""} />
+      </Field>
+      <Field label="Status">
+        <select name="status" defaultValue={record?.status ?? "active"}>
+          <option value="active">Active</option>
+          <option value="inactive">Inactive</option>
+        </select>
+      </Field>
+      {mutation.error && <p className="form-error">{mutation.error.message}</p>}
+      <div className="form-actions">
+        <button type="button" className="btn" onClick={onClose}>
+          Cancel
+        </button>
+        <button className="btn primary" disabled={mutation.isPending}>
+          {mutation.isPending ? "Saving…" : "Save area"}
+        </button>
+      </div>
+    </form>
+  );
+}
+
+export function SettingsPage() {
+  const { activeCompany, session } = useAuth();
+  const users = useRows("company_memberships", "created_at", false);
+  const areas = useRows("operational_areas", "name", true);
+  const employees = useRows("employees", "full_name", true);
+  const invitation = useCreateInvitation();
+  const client = useQueryClient();
+  const [section, setSection] = useState<
+    "organisation" | "areas" | "users" | "security" | "preferences"
+  >("organisation");
+  const [invite, setInvite] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [editingArea, setEditingArea] = useState<Row | null | "new">(null);
+  const [token, setToken] = useState("");
+  const [member, setMember] = useState<Row | null>(null);
+  const membershipMutation = useMutation({
+    mutationFn: async ({
+      action,
+      id,
+      role,
+    }: {
+      action: "deactivate" | "reactivate" | "role";
+      id: string;
+      role?: string;
+    }) => {
+      const fn =
+        action === "deactivate"
+          ? "deactivate_membership"
+          : action === "reactivate"
+            ? "reactivate_membership"
+            : "change_membership_role";
+      const args =
+        action === "role"
+          ? {
+              target_membership_id: id,
+              new_role_key: role,
+              p_reason: "Updated in CareFlow settings",
+            }
+          : {
+              target_membership_id: id,
+              p_reason: "Updated in CareFlow settings",
+            };
+      const { error } = await supabase.rpc(fn, args);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      void client.invalidateQueries({
+        queryKey: ["company", activeCompany?.id, "company_memberships"],
+      });
+      setMember(null);
+    },
+  });
+  async function submitInvite(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    const form = new FormData(e.currentTarget);
+    const raw = await invitation.mutateAsync({
+      email: String(form.get("email")),
+      role: String(form.get("role")),
+    });
+    setToken(raw);
+  }
+  const company = activeCompany as unknown as Row | null;
+  return (
+    <>
+      <PageHeader
+        title="Settings"
+        description="Organisation details, operational areas, users, access and system preferences."
+        action="Invite user"
+        onAction={() => {
+          setToken("");
+          setInvite(true);
+        }}
+      />
+      <div className="settings-layout">
+        <aside>
+          <button
+            className={section === "organisation" ? "active" : ""}
+            onClick={() => setSection("organisation")}
+          >
+            <Building2 />
+            Organisation
+          </button>
+          <button
+            className={section === "areas" ? "active" : ""}
+            onClick={() => setSection("areas")}
+          >
+            <MapPin />
+            Areas & offices
+          </button>
+          <button
+            className={section === "users" ? "active" : ""}
+            onClick={() => setSection("users")}
+          >
+            <UsersRound />
+            Users & roles
+          </button>
+          <button
+            className={section === "security" ? "active" : ""}
+            onClick={() => setSection("security")}
+          >
+            <ShieldCheck />
+            Security
+          </button>
+          <button
+            className={section === "preferences" ? "active" : ""}
+            onClick={() => setSection("preferences")}
+          >
+            <Settings2 />
+            Preferences
+          </button>
+        </aside>
+        <section className="settings-content">
+          {section === "organisation" && (
+            <>
+              <h2>Organisation profile</h2>
+              <p>Used across reports, exports and communications.</p>
+              <div className="org-card">
+                <span>{activeCompany?.name.charAt(0)}</span>
+                <div>
+                  <h3>{activeCompany?.name}</h3>
+                  <small>Active organisation</small>
+                </div>
+                <button className="btn" onClick={() => setEditing(true)}>
+                  Edit organisation
+                </button>
+              </div>
+              <div className="detail-grid">
+                <div>
+                  <small>Contact email</small>
+                  <strong>
+                    <Mail />
+                    {activeCompany?.contact_email || "Not set"}
+                  </strong>
+                </div>
+                <div>
+                  <small>Telephone</small>
+                  <strong>{activeCompany?.contact_phone || "Not set"}</strong>
+                </div>
+                <div>
+                  <small>Address</small>
+                  <strong>
+                    <MapPin />
+                    {activeCompany?.address || "Not set"}
+                  </strong>
+                </div>
+                <div>
+                  <small>Timezone</small>
+                  <strong>{activeCompany?.timezone}</strong>
+                </div>
+              </div>
+            </>
+          )}
+          {section === "areas" && (
+            <>
+              <div className="section-title">
+                <div>
+                  <h2>Operational areas and offices</h2>
+                  <p>
+                    Assign people, staff, visits and financial reporting to the
+                    correct local operation.
+                  </p>
+                </div>
+                <button
+                  className="btn primary"
+                  onClick={() => setEditingArea("new")}
+                >
+                  Add area
+                </button>
+              </div>
+              {areas.isLoading ? (
+                <Loading />
+              ) : areas.error ? (
+                <DataError
+                  message={`${areas.error.message}. Apply all Supabase migrations before using Areas.`}
+                />
+              ) : areas.data?.length ? (
+                <div className="area-grid">
+                  {areas.data.map((area) => (
+                    <article key={area.id}>
+                      <header>
+                        <span>{area.code}</span>
+                        <Status value={area.status} />
+                      </header>
+                      <h3>{area.name}</h3>
+                      <p>{area.office_name || "Office name not set"}</p>
+                      <small>
+                        <MapPin />
+                        {area.address || "No office address"}
+                      </small>
+                      <small>
+                        <UsersRound />
+                        {area.manager?.full_name || "No area manager"}
+                      </small>
+                      <button
+                        className="btn small"
+                        onClick={() => setEditingArea(area)}
+                      >
+                        Edit area
+                      </button>
+                    </article>
+                  ))}
+                </div>
+              ) : (
+                <Empty text="No operational areas are available. Add the first area to enable area-based rota filtering." />
+              )}
+            </>
+          )}
+          {section === "users" && (
+            <>
+              <h2>Users and access</h2>
+              <p>
+                Roles determine capabilities; row-level security remains
+                authoritative.
+              </p>
+              <div className="member-list">
+                {users.data?.map((u) => (
+                  <article key={u.id}>
+                    <span className="avatar">
+                      {u.profile?.full_name
+                        ?.split(" ")
+                        .map((x: string) => x[0])
+                        .join("")
+                        .slice(0, 2)}
+                    </span>
+                    <div>
+                      <strong>
+                        {u.profile?.full_name || u.profile?.email}
+                      </strong>
+                      <small>{u.profile?.email}</small>
+                    </div>
+                    <span>{u.role?.label}</span>
+                    <Status value={u.status} />
+                    <button
+                      onClick={() => setMember(u)}
+                      disabled={u.user_id === session?.user.id}
+                    >
+                      Manage
+                    </button>
+                  </article>
+                ))}
+              </div>
+            </>
+          )}
+          {section === "security" && (
+            <>
+              <h2>Security</h2>
+              <p>Security controls currently enforced for this organisation.</p>
+              <div className="detail-grid settings-cards">
+                <div>
+                  <small>Database</small>
+                  <strong>Row Level Security enabled</strong>
+                </div>
+                <div>
+                  <small>Area security</small>
+                  <strong>Supabase area access policies</strong>
+                </div>
+                <div>
+                  <small>Session timeout</small>
+                  <strong>
+                    {company?.session_timeout_minutes ?? 30} minutes
+                  </strong>
+                </div>
+                <div>
+                  <small>Audit</small>
+                  <strong>Append-only security audit</strong>
+                </div>
+              </div>
+            </>
+          )}
+          {section === "preferences" && (
+            <>
+              <h2>Preferences</h2>
+              <p>Organisation-wide operational defaults.</p>
+              <div className="detail-grid settings-cards">
+                <div>
+                  <small>Timezone</small>
+                  <strong>{activeCompany?.timezone}</strong>
+                </div>
+                <div>
+                  <small>Retention</small>
+                  <strong>{company?.retention_years ?? 7} years</strong>
+                </div>
+              </div>
+              <button
+                className="btn primary settings-edit"
+                onClick={() => setEditing(true)}
+              >
+                Edit preferences
+              </button>
+            </>
+          )}
+        </section>
+      </div>
+      {editing && company && (
+        <Modal title="Edit organisation" onClose={() => setEditing(false)}>
+          <OrganisationForm
+            company={company}
+            onClose={() => setEditing(false)}
+          />
+        </Modal>
+      )}
+      {editingArea && (
+        <Modal
+          title={
+            editingArea === "new"
+              ? "Add operational area"
+              : `Edit ${editingArea.name}`
+          }
+          onClose={() => setEditingArea(null)}
+        >
+          <AreaForm
+            employees={employees.data ?? []}
+            record={editingArea === "new" ? undefined : editingArea}
+            onClose={() => setEditingArea(null)}
+          />
+        </Modal>
+      )}
+      {member && (
+        <Modal
+          title={`Manage ${member.profile?.full_name || member.profile?.email}`}
+          onClose={() => setMember(null)}
+        >
+          <div className="form-grid">
+            <Field label="Role">
+              <select id="member-role" defaultValue={member.role?.key}>
+                <option value="company_admin">Company Administrator</option>
+                <option value="manager">Manager</option>
+                <option value="coordinator">Coordinator</option>
+                <option value="carer">Carer</option>
+                <option value="finance">Finance</option>
+              </select>
+            </Field>
+            {membershipMutation.error && (
+              <p className="form-error">{membershipMutation.error.message}</p>
+            )}
+            <div className="form-actions">
+              <button className="btn" onClick={() => setMember(null)}>
+                Cancel
+              </button>
+              <button
+                className="btn"
+                onClick={() =>
+                  void membershipMutation.mutate({
+                    action:
+                      member.status === "active" ? "deactivate" : "reactivate",
+                    id: member.id,
+                  })
+                }
+              >
+                {member.status === "active" ? "Deactivate" : "Reactivate"}
+              </button>
+              <button
+                className="btn primary"
+                onClick={() =>
+                  void membershipMutation.mutate({
+                    action: "role",
+                    id: member.id,
+                    role: (
+                      document.getElementById(
+                        "member-role",
+                      ) as HTMLSelectElement
+                    ).value,
+                  })
+                }
+              >
+                Change role
+              </button>
+            </div>
+          </div>
+        </Modal>
+      )}
+      {invite && (
+        <Modal title="Invite a user" onClose={() => setInvite(false)}>
+          {token ? (
+            <div className="form-grid">
+              <p className="notice">
+                Invitation created. Send this one-time code through an approved
+                secure channel. It is shown only once.
+              </p>
+              <Field label="One-time code">
+                <input readOnly value={token} />
+              </Field>
+              <div className="form-actions">
+                <button
+                  className="btn primary"
+                  onClick={() => void navigator.clipboard.writeText(token)}
+                >
+                  Copy code
+                </button>
+                <button className="btn" onClick={() => setInvite(false)}>
+                  Done
+                </button>
+              </div>
+            </div>
+          ) : (
+            <form className="form-grid" onSubmit={submitInvite}>
+              <Field label="Email address">
+                <input name="email" type="email" required autoFocus />
+              </Field>
+              <Field label="Role">
+                <select name="role" defaultValue="carer">
+                  <option value="company_admin">Company Administrator</option>
+                  <option value="manager">Manager</option>
+                  <option value="coordinator">Coordinator</option>
+                  <option value="carer">Carer</option>
+                  <option value="finance">Finance</option>
+                </select>
+              </Field>
+              {invitation.error && (
+                <p className="form-error">{invitation.error.message}</p>
+              )}
+              <div className="form-actions">
+                <button
+                  type="button"
+                  className="btn"
+                  onClick={() => setInvite(false)}
+                >
+                  Cancel
+                </button>
+                <button className="btn primary" disabled={invitation.isPending}>
+                  {invitation.isPending ? "Creating…" : "Create invitation"}
+                </button>
+              </div>
+            </form>
+          )}
+        </Modal>
+      )}
+    </>
+  );
 }
