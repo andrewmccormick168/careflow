@@ -377,7 +377,15 @@ export function useSaveOperationalArea() {
         payload,
       );
       if (!error) return data as Row;
-      if (!["PGRST202", "42883"].includes(error.code ?? "")) throw error;
+      const isMissingFunction = ["PGRST202", "42883"].includes(
+        error.code ?? "",
+      );
+      const isDuplicateCode =
+        error.code === "23505" ||
+        /operational_areas_company_id_code_key|area with code .* already exists|duplicate key/i.test(
+          error.message,
+        );
+      if (!isMissingFunction && !isDuplicateCode) throw error;
       const row = {
         name: String(cleaned.name ?? "").trim(),
         code: safeCode,
@@ -400,13 +408,29 @@ export function useSaveOperationalArea() {
         if (fallbackError) throw fallbackError;
         return fallback as Row;
       }
-      const { data: fallback, error: fallbackError } = await supabase
-        .from("operational_areas")
-        .insert(row)
-        .select()
-        .single();
-      if (fallbackError) throw fallbackError;
-      return fallback as Row;
+      // Older deployments may not have the save RPC yet, and another user can
+      // claim a code between the list and insert calls. Retry with a compact
+      // random suffix so area creation can never be blocked by that race.
+      let candidate = row.code;
+      for (let attempt = 0; attempt < 5; attempt += 1) {
+        const { data: fallback, error: fallbackError } = await supabase
+          .from("operational_areas")
+          .insert({ ...row, code: candidate })
+          .select()
+          .single();
+        if (!fallbackError) return fallback as Row;
+        const duplicate =
+          fallbackError.code === "23505" ||
+          /operational_areas_company_id_code_key|duplicate key/i.test(
+            fallbackError.message,
+          );
+        if (!duplicate) throw fallbackError;
+        const suffix = crypto.randomUUID().slice(0, 4).toUpperCase();
+        candidate = `${baseCode.slice(0, 11)}-${suffix}`;
+      }
+      throw new Error(
+        "CareFlow could not allocate a unique area code after five attempts.",
+      );
     },
     onSuccess: async () => {
       await client.invalidateQueries({
