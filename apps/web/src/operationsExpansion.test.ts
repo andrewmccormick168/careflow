@@ -17,6 +17,10 @@ const areaVisibilityMigration = readFileSync(
   ),
   "utf8",
 );
+const dataAdapter = readFileSync(
+  new URL("./lib/data.ts", import.meta.url),
+  "utf8",
+);
 
 describe("operational expansion", () => {
   it("enforces operational areas in the database security boundary", () => {
@@ -34,6 +38,15 @@ describe("operational expansion", () => {
       "has_company_capability(target_company_id, 'settings.manage')",
     );
     expect(areaVisibilityMigration).toContain("operational_areas_select");
+  });
+
+  it("uses explicit foreign keys for the bidirectional area-manager relationship", () => {
+    expect(dataAdapter).toContain(
+      "employees!operational_areas_manager_id_company_id_fkey",
+    );
+    expect(dataAdapter).toContain(
+      "operational_areas!employees_area_id_company_id_fkey",
+    );
   });
 
   it("calculates debtor balances from invoices and recorded payments", () => {

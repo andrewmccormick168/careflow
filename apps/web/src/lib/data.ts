@@ -8,9 +8,11 @@ import { supabase } from "./supabaseClient";
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export type Row = Record<string, any>;
 const relationSelect: Record<string, string> = {
-  operational_areas: "*,manager:employees(full_name)",
+  operational_areas:
+    "*,manager:employees!operational_areas_manager_id_company_id_fkey(full_name)",
   service_user_assignments: "*,employee:employees(full_name,job_title)",
-  employees: "*,area:operational_areas(name,code)",
+  employees:
+    "*,area:operational_areas!employees_area_id_company_id_fkey(name,code)",
   service_users: "*,area:operational_areas(name,code)",
   visits:
     "*,service_user:service_users(full_name,area_id),area:operational_areas(name,code),employee:employees(full_name),assignments:visit_assignments(id,assignment_slot,employee_id,employee:employees(full_name,job_title))",
